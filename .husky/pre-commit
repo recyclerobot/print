@@ -1,0 +1,36 @@
+#!/usr/bin/env sh
+# Pre-commit hook: build the static site into docs/ and stage it.
+# Preserves docs/CNAME (vite is configured with emptyOutDir: false, and we
+# additionally restore CNAME if anything ever removes it).
+
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Snapshot CNAME (if any) so we can guarantee it survives the build.
+CNAME_TMP=""
+if [ -f "docs/CNAME" ]; then
+  CNAME_TMP="$(mktemp)"
+  cp docs/CNAME "$CNAME_TMP"
+fi
+
+echo "[pre-commit] Building static site to docs/ ..."
+npm run --silent build
+
+# Restore CNAME if it was removed for any reason.
+if [ -n "$CNAME_TMP" ]; then
+  if [ ! -f "docs/CNAME" ] || ! cmp -s "$CNAME_TMP" "docs/CNAME"; then
+    echo "[pre-commit] Restoring docs/CNAME"
+    cp "$CNAME_TMP" docs/CNAME
+  fi
+  rm -f "$CNAME_TMP"
+fi
+
+# Make sure GitHub Pages doesn't run Jekyll on the build output.
+[ -f "docs/.nojekyll" ] || touch docs/.nojekyll
+
+# Stage the rebuilt docs/ (CNAME included).
+git add docs
+
+echo "[pre-commit] docs/ built and staged."
