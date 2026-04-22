@@ -1,13 +1,13 @@
-import './style.css';
-import { store } from './store';
-import { Renderer } from './webgl/renderer';
-import { attachInteraction } from './interaction';
-import { buildToolbar } from './ui/toolbar';
-import { buildPagesPanel } from './ui/pagesPanel';
-import { buildPropertiesPanel } from './ui/propertiesPanel';
-import { createRulers } from './ui/rulers';
+import "./style.css";
+import { store } from "./store";
+import { Renderer } from "./webgl/renderer";
+import { attachInteraction } from "./interaction";
+import { buildToolbar } from "./ui/toolbar";
+import { buildPagesPanel } from "./ui/pagesPanel";
+import { buildPropertiesPanel } from "./ui/propertiesPanel";
+import { createRulers } from "./ui/rulers";
 
-const app = document.getElementById('app')!;
+const app = document.getElementById("app")!;
 app.innerHTML = `
   <div class="layout">
     <header class="topbar" id="toolbar"></header>
@@ -20,8 +20,8 @@ app.innerHTML = `
   </div>
 `;
 
-const canvas = document.getElementById('canvas') as HTMLCanvasElement;
-const canvasHost = document.getElementById('canvasHost')!;
+const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+const canvasHost = document.getElementById("canvasHost")!;
 const renderer = new Renderer(canvas);
 renderer.setDocument(store.doc, store.currentPageId, store.selectedIds);
 renderer.showGrid = store.prefs.showGrid;
@@ -44,18 +44,24 @@ function requestRender(): void {
 const rulers = createRulers(canvasHost, renderer);
 attachInteraction(canvas, renderer, requestRender);
 
-buildToolbar(document.getElementById('toolbar')!, renderer, requestRender);
-buildPagesPanel(document.getElementById('pages')!, renderer, requestRender);
-buildPropertiesPanel(document.getElementById('props')!, renderer, requestRender);
+buildToolbar(document.getElementById("toolbar")!, renderer, requestRender);
+buildPagesPanel(document.getElementById("pages")!, renderer, requestRender);
+buildPropertiesPanel(
+  document.getElementById("props")!,
+  renderer,
+  requestRender,
+);
 
-window.addEventListener('resize', () => requestRender());
+window.addEventListener("resize", () => requestRender());
 store.subscribe(() => requestRender());
 
 function updateStatus(): void {
-  const status = document.getElementById('status')!;
+  const status = document.getElementById("status")!;
   const sel = store.selected();
-  const z = (renderer.view.zoom * 25.4 / 96 * 100).toFixed(0);
-  const pageIdx = store.doc.pages.findIndex(p => p.id === store.currentPageId);
+  const z = (((renderer.view.zoom * 25.4) / 96) * 100).toFixed(0);
+  const pageIdx = store.doc.pages.findIndex(
+    (p) => p.id === store.currentPageId,
+  );
   const sizeCm = `${(store.doc.size.width / 10).toFixed(1)}×${(store.doc.size.height / 10).toFixed(1)} cm`;
   let info = `Page ${pageIdx + 1}/${store.doc.pages.length} · ${sizeCm} · zoom ${z}% · unit ${store.prefs.unit}`;
   if (sel.length === 1) {

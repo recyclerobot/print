@@ -1,43 +1,43 @@
 // Core document model. All measurements are stored in millimeters (mm)
 // for printing accuracy. Convert to px/pt only at render/export boundaries.
 
-export type Unit = 'mm' | 'cm' | 'in' | 'pt' | 'px';
+export type Unit = "mm" | "cm" | "in" | "pt" | "px";
 
 export interface Margins {
-  top: number;    // mm
-  right: number;  // mm
+  top: number; // mm
+  right: number; // mm
   bottom: number; // mm
-  left: number;   // mm
+  left: number; // mm
 }
 
 export interface Bleed {
-  top: number;    // mm
-  right: number;  // mm
+  top: number; // mm
+  right: number; // mm
   bottom: number; // mm
-  left: number;   // mm
+  left: number; // mm
 }
 
 export interface PageSize {
-  width: number;  // mm
+  width: number; // mm
   height: number; // mm
 }
 
 export interface BaseElement {
   id: string;
   name?: string;
-  type: 'text' | 'image' | 'rect';
+  type: "text" | "image" | "rect";
   x: number; // mm, top-left
   y: number; // mm, top-left
-  width: number;  // mm
+  width: number; // mm
   height: number; // mm
   rotation: number; // degrees
-  opacity: number;  // 0..1
+  opacity: number; // 0..1
   locked?: boolean;
   hidden?: boolean;
 }
 
 export interface TextElement extends BaseElement {
-  type: 'text';
+  type: "text";
   text: string;
   fontFamily: string;
   fontSize: number; // pt
@@ -46,22 +46,22 @@ export interface TextElement extends BaseElement {
   color: string; // hex
   lineHeight: number; // multiplier
   letterSpacing: number; // em
-  align: 'left' | 'center' | 'right' | 'justify';
-  vAlign: 'top' | 'middle' | 'bottom';
+  align: "left" | "center" | "right" | "justify";
+  vAlign: "top" | "middle" | "bottom";
 }
 
 export interface ImageElement extends BaseElement {
-  type: 'image';
+  type: "image";
   src: string; // data URL
-  fit: 'contain' | 'cover' | 'fill';
+  fit: "contain" | "cover" | "fill";
   naturalWidth?: number;
   naturalHeight?: number;
 }
 
 export interface RectElement extends BaseElement {
-  type: 'rect';
-  fill: string;       // hex with alpha optional
-  stroke: string;     // hex
+  type: "rect";
+  fill: string; // hex with alpha optional
+  stroke: string; // hex
   strokeWidth: number; // mm
   cornerRadius: number; // mm
 }

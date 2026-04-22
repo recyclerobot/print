@@ -46,15 +46,15 @@ To set up GitHub Pages:
 
 ## Keyboard shortcuts
 
-| Action | Shortcut |
-|---|---|
-| Undo / Redo | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z |
-| Delete selection | Backspace / Delete |
-| Nudge / large nudge | Arrow keys / Shift+Arrows |
-| Pan | Middle-click drag, or Alt+drag |
-| Zoom | Ctrl/Cmd + scroll |
-| Fit to screen | Ctrl/Cmd+0 |
-| Constrain resize aspect | Shift while resizing |
+| Action                  | Shortcut                       |
+| ----------------------- | ------------------------------ |
+| Undo / Redo             | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z   |
+| Delete selection        | Backspace / Delete             |
+| Nudge / large nudge     | Arrow keys / Shift+Arrows      |
+| Pan                     | Middle-click drag, or Alt+drag |
+| Zoom                    | Ctrl/Cmd + scroll              |
+| Fit to screen           | Ctrl/Cmd+0                     |
+| Constrain resize aspect | Shift while resizing           |
 
 ## How it works
 

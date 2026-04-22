@@ -1,18 +1,22 @@
-import { store } from '../store';
-import { exportPdf, type ExportDpi } from '../pdf';
-import { newImageElement, newRectElement, newTextElement } from '../store';
-import { A_SIZES } from '../types';
-import type { Renderer } from '../webgl/renderer';
+import { store } from "../store";
+import { exportPdf, type ExportDpi } from "../pdf";
+import { newImageElement, newRectElement, newTextElement } from "../store";
+import { A_SIZES } from "../types";
+import type { Renderer } from "../webgl/renderer";
 
-export function buildToolbar(host: HTMLElement, renderer: Renderer, requestRender: () => void): void {
-  host.innerHTML = '';
+export function buildToolbar(
+  host: HTMLElement,
+  renderer: Renderer,
+  requestRender: () => void,
+): void {
+  host.innerHTML = "";
 
   const group = (label: string) => {
-    const g = document.createElement('div');
-    g.className = 'tb-group';
+    const g = document.createElement("div");
+    g.className = "tb-group";
     if (label) {
-      const l = document.createElement('span');
-      l.className = 'tb-label';
+      const l = document.createElement("span");
+      l.className = "tb-label";
       l.textContent = label;
       g.appendChild(l);
     }
@@ -21,13 +25,15 @@ export function buildToolbar(host: HTMLElement, renderer: Renderer, requestRende
   };
 
   // File group
-  const file = group('');
-  file.appendChild(button('New', () => {
-    if (!confirm('Discard current document and start fresh?')) return;
-    store.resetDocument();
-    renderer.invalidate();
-    requestRender();
-  }));
+  const file = group("");
+  file.appendChild(
+    button("New", () => {
+      if (!confirm("Discard current document and start fresh?")) return;
+      store.resetDocument();
+      renderer.invalidate();
+      requestRender();
+    }),
+  );
   const sizeSel = select(Object.keys(A_SIZES), (v) => {
     const s = A_SIZES[v];
     store.setDocumentMeta({ size: { ...s } });
@@ -36,37 +42,49 @@ export function buildToolbar(host: HTMLElement, renderer: Renderer, requestRende
   });
   // Match current size to a preset name when possible
   for (const [name, s] of Object.entries(A_SIZES)) {
-    if (Math.abs(s.width - store.doc.size.width) < 0.5 && Math.abs(s.height - store.doc.size.height) < 0.5) {
-      sizeSel.value = name; break;
+    if (
+      Math.abs(s.width - store.doc.size.width) < 0.5 &&
+      Math.abs(s.height - store.doc.size.height) < 0.5
+    ) {
+      sizeSel.value = name;
+      break;
     }
   }
-  file.appendChild(labeledControl('Preset', sizeSel));
+  file.appendChild(labeledControl("Preset", sizeSel));
 
   // Custom size
   const wIn = numInput(store.doc.size.width / 10, 0.1, 200, 0.1, (v) => {
     store.setDocumentMeta({ size: { ...store.doc.size, width: v * 10 } });
-    renderer.fitToScreen(); requestRender();
+    renderer.fitToScreen();
+    requestRender();
   });
   const hIn = numInput(store.doc.size.height / 10, 0.1, 200, 0.1, (v) => {
     store.setDocumentMeta({ size: { ...store.doc.size, height: v * 10 } });
-    renderer.fitToScreen(); requestRender();
+    renderer.fitToScreen();
+    requestRender();
   });
-  file.appendChild(labeledControl('W (cm)', wIn));
-  file.appendChild(labeledControl('H (cm)', hIn));
+  file.appendChild(labeledControl("W (cm)", wIn));
+  file.appendChild(labeledControl("H (cm)", hIn));
 
   // Insert group
-  const insert = group('Insert');
-  insert.appendChild(button('+ Text', () => {
-    store.addElement(newTextElement({ x: 20, y: 20, width: 80, height: 30 }));
-    requestRender();
-  }));
-  insert.appendChild(button('+ Rect', () => {
-    store.addElement(newRectElement());
-    requestRender();
-  }));
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.style.display = 'none';
-  fileInput.addEventListener('change', () => {
+  const insert = group("Insert");
+  insert.appendChild(
+    button("+ Text", () => {
+      store.addElement(newTextElement({ x: 20, y: 20, width: 80, height: 30 }));
+      requestRender();
+    }),
+  );
+  insert.appendChild(
+    button("+ Rect", () => {
+      store.addElement(newRectElement());
+      requestRender();
+    }),
+  );
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/*";
+  fileInput.style.display = "none";
+  fileInput.addEventListener("change", () => {
     const f = fileInput.files?.[0];
     if (!f) return;
     const reader = new FileReader();
@@ -75,99 +93,184 @@ export function buildToolbar(host: HTMLElement, renderer: Renderer, requestRende
       const img = new Image();
       img.onload = () => {
         const ratio = img.naturalWidth / img.naturalHeight;
-        const w = 80, h = w / ratio;
-        store.addElement(newImageElement({ src, x: 20, y: 20, width: w, height: h, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight }));
+        const w = 80,
+          h = w / ratio;
+        store.addElement(
+          newImageElement({
+            src,
+            x: 20,
+            y: 20,
+            width: w,
+            height: h,
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight,
+          }),
+        );
         requestRender();
       };
       img.src = src;
     };
     reader.readAsDataURL(f);
-    fileInput.value = '';
+    fileInput.value = "";
   });
   insert.appendChild(fileInput);
-  insert.appendChild(button('+ Image', () => fileInput.click()));
+  insert.appendChild(button("+ Image", () => fileInput.click()));
 
   // View group
-  const view = group('View');
-  view.appendChild(button('Fit', () => { renderer.fitToScreen(); requestRender(); }));
-  view.appendChild(button('100%', () => {
-    // 100% = 1mm-on-screen-equals-1mm-on-paper at 96 DPI ≈ 3.78 px/mm
-    renderer.view.zoom = 96 / 25.4;
-    requestRender();
-  }));
-  view.appendChild(toggleBtn('Rulers', store.prefs.showRulers, (v) => { store.prefs.showRulers = v; store.save(); document.body.classList.toggle('no-rulers', !v); requestRender(); }));
-  view.appendChild(toggleBtn('Margins', store.prefs.showMargins, (v) => { store.prefs.showMargins = v; renderer.showMargins = v; store.save(); requestRender(); }));
-  view.appendChild(toggleBtn('Bleed', store.prefs.showBleed, (v) => { store.prefs.showBleed = v; renderer.showBleed = v; store.save(); requestRender(); }));
-  view.appendChild(toggleBtn('Grid', store.prefs.showGrid, (v) => { store.prefs.showGrid = v; renderer.showGrid = v; store.save(); requestRender(); }));
-  view.appendChild(toggleBtn('Snap', store.prefs.snapEnabled, (v) => { store.prefs.snapEnabled = v; store.save(); }));
+  const view = group("View");
+  view.appendChild(
+    button("Fit", () => {
+      renderer.fitToScreen();
+      requestRender();
+    }),
+  );
+  view.appendChild(
+    button("100%", () => {
+      // 100% = 1mm-on-screen-equals-1mm-on-paper at 96 DPI ≈ 3.78 px/mm
+      renderer.view.zoom = 96 / 25.4;
+      requestRender();
+    }),
+  );
+  view.appendChild(
+    toggleBtn("Rulers", store.prefs.showRulers, (v) => {
+      store.prefs.showRulers = v;
+      store.save();
+      document.body.classList.toggle("no-rulers", !v);
+      requestRender();
+    }),
+  );
+  view.appendChild(
+    toggleBtn("Margins", store.prefs.showMargins, (v) => {
+      store.prefs.showMargins = v;
+      renderer.showMargins = v;
+      store.save();
+      requestRender();
+    }),
+  );
+  view.appendChild(
+    toggleBtn("Bleed", store.prefs.showBleed, (v) => {
+      store.prefs.showBleed = v;
+      renderer.showBleed = v;
+      store.save();
+      requestRender();
+    }),
+  );
+  view.appendChild(
+    toggleBtn("Grid", store.prefs.showGrid, (v) => {
+      store.prefs.showGrid = v;
+      renderer.showGrid = v;
+      store.save();
+      requestRender();
+    }),
+  );
+  view.appendChild(
+    toggleBtn("Snap", store.prefs.snapEnabled, (v) => {
+      store.prefs.snapEnabled = v;
+      store.save();
+    }),
+  );
 
   // Print preview & export
-  const out = group('Output');
-  out.appendChild(button('Print Preview', () => openPrintPreview()));
-  const dpiSel = select(['72', '150', '300', '600', '1200'], () => {});
-  dpiSel.value = '300';
-  out.appendChild(labeledControl('DPI', dpiSel));
-  out.appendChild(button('Export PDF', async () => {
-    const dpi = parseInt(dpiSel.value, 10) as ExportDpi;
-    const btn = (host.querySelector('[data-export]') as HTMLButtonElement | null);
-    if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
-    try {
-      const blob = await exportPdf(store.doc, { dpi, includeBleed: true, includeCropMarks: true });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `${store.doc.name || 'document'}-${dpi}dpi.pdf`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e) {
-      alert('Export failed: ' + (e as Error).message);
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Export PDF'; }
-    }
-  })).setAttribute('data-export', '1');
+  const out = group("Output");
+  out.appendChild(button("Print Preview", () => openPrintPreview()));
+  const dpiSel = select(["72", "150", "300", "600", "1200"], () => {});
+  dpiSel.value = "300";
+  out.appendChild(labeledControl("DPI", dpiSel));
+  out
+    .appendChild(
+      button("Export PDF", async () => {
+        const dpi = parseInt(dpiSel.value, 10) as ExportDpi;
+        const btn = host.querySelector(
+          "[data-export]",
+        ) as HTMLButtonElement | null;
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "Exporting…";
+        }
+        try {
+          const blob = await exportPdf(store.doc, {
+            dpi,
+            includeBleed: true,
+            includeCropMarks: true,
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${store.doc.name || "document"}-${dpi}dpi.pdf`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (e) {
+          alert("Export failed: " + (e as Error).message);
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Export PDF";
+          }
+        }
+      }),
+    )
+    .setAttribute("data-export", "1");
 }
 
 function button(label: string, onClick: () => void): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.className = 'btn';
+  const b = document.createElement("button");
+  b.className = "btn";
   b.textContent = label;
-  b.addEventListener('click', onClick);
+  b.addEventListener("click", onClick);
   return b;
 }
-function toggleBtn(label: string, initial: boolean, onChange: (v: boolean) => void): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.className = 'btn toggle';
+function toggleBtn(
+  label: string,
+  initial: boolean,
+  onChange: (v: boolean) => void,
+): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "btn toggle";
   b.textContent = label;
-  b.classList.toggle('on', initial);
-  b.addEventListener('click', () => {
-    const next = !b.classList.contains('on');
-    b.classList.toggle('on', next);
+  b.classList.toggle("on", initial);
+  b.addEventListener("click", () => {
+    const next = !b.classList.contains("on");
+    b.classList.toggle("on", next);
     onChange(next);
   });
   return b;
 }
-function select(options: string[], onChange: (v: string) => void): HTMLSelectElement {
-  const s = document.createElement('select');
-  s.className = 'select';
+function select(
+  options: string[],
+  onChange: (v: string) => void,
+): HTMLSelectElement {
+  const s = document.createElement("select");
+  s.className = "select";
   for (const o of options) {
-    const opt = document.createElement('option');
-    opt.value = o; opt.textContent = o;
+    const opt = document.createElement("option");
+    opt.value = o;
+    opt.textContent = o;
     s.appendChild(opt);
   }
-  s.addEventListener('change', () => onChange(s.value));
+  s.addEventListener("change", () => onChange(s.value));
   return s;
 }
-function numInput(value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLInputElement {
-  const i = document.createElement('input');
-  i.type = 'number'; i.value = String(value);
-  i.min = String(min); i.max = String(max); i.step = String(step);
-  i.className = 'num';
-  i.addEventListener('change', () => onChange(parseFloat(i.value)));
+function numInput(
+  value: number,
+  min: number,
+  max: number,
+  step: number,
+  onChange: (v: number) => void,
+): HTMLInputElement {
+  const i = document.createElement("input");
+  i.type = "number";
+  i.value = String(value);
+  i.min = String(min);
+  i.max = String(max);
+  i.step = String(step);
+  i.className = "num";
+  i.addEventListener("change", () => onChange(parseFloat(i.value)));
   return i;
 }
 function labeledControl(label: string, control: HTMLElement): HTMLElement {
-  const w = document.createElement('label');
-  w.className = 'lc';
-  const s = document.createElement('span');
+  const w = document.createElement("label");
+  w.className = "lc";
+  const s = document.createElement("span");
   s.textContent = label;
   w.appendChild(s);
   w.appendChild(control);
@@ -175,7 +278,7 @@ function labeledControl(label: string, control: HTMLElement): HTMLElement {
 }
 
 function openPrintPreview(): void {
-  const win = window.open('', '_blank', 'width=900,height=1200');
+  const win = window.open("", "_blank", "width=900,height=1200");
   if (!win) return;
   const doc = store.doc;
   const styles = `
@@ -194,13 +297,17 @@ function openPrintPreview(): void {
   for (let i = 0; i < doc.pages.length; i++) {
     body += `<h1>Page ${i + 1}</h1><canvas class="page" id="p${i}"></canvas>`;
   }
-  win.document.write(`<!doctype html><html><head><title>Preview – ${doc.name}</title><style>${styles}</style></head><body>${body}</body></html>`);
+  win.document.write(
+    `<!doctype html><html><head><title>Preview – ${doc.name}</title><style>${styles}</style></head><body>${body}</body></html>`,
+  );
   win.document.close();
   // Render after a tick so canvases exist
   setTimeout(async () => {
-    const { exportPagePreview } = await import('../printPreview');
+    const { exportPagePreview } = await import("../printPreview");
     for (let i = 0; i < doc.pages.length; i++) {
-      const c = win.document.getElementById('p' + i) as HTMLCanvasElement | null;
+      const c = win.document.getElementById(
+        "p" + i,
+      ) as HTMLCanvasElement | null;
       if (c) await exportPagePreview(doc, doc.pages[i], c, 150);
     }
   }, 50);

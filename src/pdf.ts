@@ -1,7 +1,14 @@
-import { jsPDF } from 'jspdf';
-import type { PrintDocument, Page, AnyElement, TextElement, RectElement, ImageElement } from './types';
-import { mmToPx } from './units';
-import { loadImage } from './webgl/rasterize';
+import { jsPDF } from "jspdf";
+import type {
+  PrintDocument,
+  Page,
+  AnyElement,
+  TextElement,
+  RectElement,
+  ImageElement,
+} from "./types";
+import { mmToPx } from "./units";
+import { loadImage } from "./webgl/rasterize";
 
 export type ExportDpi = 72 | 150 | 300 | 600 | 1200;
 
@@ -12,15 +19,20 @@ export interface ExportOptions {
   pages?: number[]; // page indices, default all
 }
 
-export async function exportPdf(doc: PrintDocument, opts: ExportOptions): Promise<Blob> {
+export async function exportPdf(
+  doc: PrintDocument,
+  opts: ExportOptions,
+): Promise<Blob> {
   const dpi = opts.dpi;
-  const bleed = opts.includeBleed ? doc.bleed : { top: 0, right: 0, bottom: 0, left: 0 };
+  const bleed = opts.includeBleed
+    ? doc.bleed
+    : { top: 0, right: 0, bottom: 0, left: 0 };
   const pageWmm = doc.size.width + bleed.left + bleed.right;
   const pageHmm = doc.size.height + bleed.top + bleed.bottom;
 
   const pdf = new jsPDF({
-    orientation: pageWmm > pageHmm ? 'landscape' : 'portrait',
-    unit: 'mm',
+    orientation: pageWmm > pageHmm ? "landscape" : "portrait",
+    unit: "mm",
     format: [pageWmm, pageHmm],
     compress: true,
   });
@@ -30,30 +42,45 @@ export async function exportPdf(doc: PrintDocument, opts: ExportOptions): Promis
   for (let i = 0; i < indices.length; i++) {
     const page = doc.pages[indices[i]];
     if (!page) continue;
-    if (i > 0) pdf.addPage([pageWmm, pageHmm], pageWmm > pageHmm ? 'landscape' : 'portrait');
-    const dataUrl = await rasterizePageToDataUrl(doc, page, dpi, opts.includeBleed, opts.includeCropMarks);
-    pdf.addImage(dataUrl, 'JPEG', 0, 0, pageWmm, pageHmm, undefined, 'FAST');
+    if (i > 0)
+      pdf.addPage(
+        [pageWmm, pageHmm],
+        pageWmm > pageHmm ? "landscape" : "portrait",
+      );
+    const dataUrl = await rasterizePageToDataUrl(
+      doc,
+      page,
+      dpi,
+      opts.includeBleed,
+      opts.includeCropMarks,
+    );
+    pdf.addImage(dataUrl, "JPEG", 0, 0, pageWmm, pageHmm, undefined, "FAST");
   }
-  return pdf.output('blob');
+  return pdf.output("blob");
 }
 
 async function rasterizePageToDataUrl(
-  doc: PrintDocument, page: Page, dpi: number,
-  includeBleed: boolean, includeCropMarks: boolean,
+  doc: PrintDocument,
+  page: Page,
+  dpi: number,
+  includeBleed: boolean,
+  includeCropMarks: boolean,
 ): Promise<string> {
-  const bleed = includeBleed ? doc.bleed : { top: 0, right: 0, bottom: 0, left: 0 };
+  const bleed = includeBleed
+    ? doc.bleed
+    : { top: 0, right: 0, bottom: 0, left: 0 };
   const pageWmm = doc.size.width + bleed.left + bleed.right;
   const pageHmm = doc.size.height + bleed.top + bleed.bottom;
   const pxPerMm = dpi / 25.4;
   const W = Math.round(mmToPx(pageWmm, dpi));
   const H = Math.round(mmToPx(pageHmm, dpi));
 
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext("2d")!;
   // Fill page background
-  ctx.fillStyle = page.background || '#ffffff';
+  ctx.fillStyle = page.background || "#ffffff";
   ctx.fillRect(0, 0, W, H);
 
   // Translate so that (0,0) corresponds to page top-left (inside bleed region).
@@ -72,10 +99,14 @@ async function rasterizePageToDataUrl(
 
   // JPEG keeps file sizes manageable for high DPI; use quality based on DPI.
   const quality = dpi >= 600 ? 0.95 : dpi >= 300 ? 0.92 : 0.88;
-  return canvas.toDataURL('image/jpeg', quality);
+  return canvas.toDataURL("image/jpeg", quality);
 }
 
-async function drawElementToContext(ctx: CanvasRenderingContext2D, el: AnyElement, pxPerMm: number): Promise<void> {
+async function drawElementToContext(
+  ctx: CanvasRenderingContext2D,
+  el: AnyElement,
+  pxPerMm: number,
+): Promise<void> {
   ctx.save();
   ctx.globalAlpha = el.opacity;
   // Rotate around element center
@@ -85,21 +116,27 @@ async function drawElementToContext(ctx: CanvasRenderingContext2D, el: AnyElemen
   ctx.rotate((el.rotation * Math.PI) / 180);
   ctx.translate(-cx, -cy);
 
-  if (el.type === 'rect') drawRectExport(ctx, el, pxPerMm);
-  else if (el.type === 'text') drawTextExport(ctx, el, pxPerMm);
-  else if (el.type === 'image') await drawImageExport(ctx, el, pxPerMm);
+  if (el.type === "rect") drawRectExport(ctx, el, pxPerMm);
+  else if (el.type === "text") drawTextExport(ctx, el, pxPerMm);
+  else if (el.type === "image") await drawImageExport(ctx, el, pxPerMm);
 
   ctx.restore();
 }
 
-function drawRectExport(ctx: CanvasRenderingContext2D, el: RectElement, pxPerMm: number): void {
-  const x = el.x * pxPerMm, y = el.y * pxPerMm;
-  const w = el.width * pxPerMm, h = el.height * pxPerMm;
+function drawRectExport(
+  ctx: CanvasRenderingContext2D,
+  el: RectElement,
+  pxPerMm: number,
+): void {
+  const x = el.x * pxPerMm,
+    y = el.y * pxPerMm;
+  const w = el.width * pxPerMm,
+    h = el.height * pxPerMm;
   const r = Math.max(0, el.cornerRadius * pxPerMm);
   const sw = Math.max(0, el.strokeWidth * pxPerMm);
   ctx.beginPath();
   roundRect(ctx, x + sw / 2, y + sw / 2, w - sw, h - sw, r);
-  if (el.fill && el.fill !== 'transparent') {
+  if (el.fill && el.fill !== "transparent") {
     ctx.fillStyle = el.fill;
     ctx.fill();
   }
@@ -110,7 +147,14 @@ function drawRectExport(ctx: CanvasRenderingContext2D, el: RectElement, pxPerMm:
   }
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
   const rr = Math.min(r, w / 2, h / 2);
   ctx.moveTo(x + rr, y);
   ctx.lineTo(x + w - rr, y);
@@ -124,20 +168,28 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-function drawTextExport(ctx: CanvasRenderingContext2D, el: TextElement, pxPerMm: number): void {
-  const x = el.x * pxPerMm, y = el.y * pxPerMm;
-  const w = el.width * pxPerMm, h = el.height * pxPerMm;
-  const sizePx = (el.fontSize * 25.4 / 72) * pxPerMm;
+function drawTextExport(
+  ctx: CanvasRenderingContext2D,
+  el: TextElement,
+  pxPerMm: number,
+): void {
+  const x = el.x * pxPerMm,
+    y = el.y * pxPerMm;
+  const w = el.width * pxPerMm,
+    h = el.height * pxPerMm;
+  const sizePx = ((el.fontSize * 25.4) / 72) * pxPerMm;
   ctx.save();
   ctx.translate(x, y);
-  ctx.font = `${el.italic ? 'italic ' : ''}${el.fontWeight} ${sizePx}px ${el.fontFamily}`;
+  ctx.font = `${el.italic ? "italic " : ""}${el.fontWeight} ${sizePx}px ${el.fontFamily}`;
   ctx.fillStyle = el.color;
-  ctx.textBaseline = 'alphabetic';
+  ctx.textBaseline = "alphabetic";
   const lines = wrapText(ctx, el.text, w, el.letterSpacing, sizePx);
   const lineHeight = sizePx * el.lineHeight;
   let cy = lineHeight;
-  if (el.vAlign === 'middle') cy = (h - lines.length * lineHeight) / 2 + lineHeight * 0.8;
-  if (el.vAlign === 'bottom') cy = h - (lines.length - 1) * lineHeight - lineHeight * 0.2;
+  if (el.vAlign === "middle")
+    cy = (h - lines.length * lineHeight) / 2 + lineHeight * 0.8;
+  if (el.vAlign === "bottom")
+    cy = h - (lines.length - 1) * lineHeight - lineHeight * 0.2;
   for (const line of lines) {
     drawLineExport(ctx, line, w, cy, el, sizePx);
     cy += lineHeight;
@@ -145,37 +197,61 @@ function drawTextExport(ctx: CanvasRenderingContext2D, el: TextElement, pxPerMm:
   ctx.restore();
 }
 
-function measureWithSpacing(ctx: CanvasRenderingContext2D, text: string, ls: number, sizePx: number): number {
+function measureWithSpacing(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  ls: number,
+  sizePx: number,
+): number {
   if (!ls) return ctx.measureText(text).width;
   let total = 0;
   for (const ch of text) total += ctx.measureText(ch).width + ls * sizePx;
   return total - ls * sizePx;
 }
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, ls: number, sizePx: number): string[] {
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  ls: number,
+  sizePx: number,
+): string[] {
   const out: string[] = [];
   for (const para of text.split(/\n/)) {
     const words = para.split(/(\s+)/);
-    let line = '';
+    let line = "";
     for (const word of words) {
       const trial = line + word;
-      if (measureWithSpacing(ctx, trial, ls, sizePx) > maxWidth && line.trim().length) {
-        out.push(line.replace(/\s+$/, ''));
-        line = word.replace(/^\s+/, '');
+      if (
+        measureWithSpacing(ctx, trial, ls, sizePx) > maxWidth &&
+        line.trim().length
+      ) {
+        out.push(line.replace(/\s+$/, ""));
+        line = word.replace(/^\s+/, "");
       } else line = trial;
     }
     out.push(line);
   }
   return out;
 }
-function drawLineExport(ctx: CanvasRenderingContext2D, line: string, maxWidth: number, y: number, el: TextElement, sizePx: number): void {
+function drawLineExport(
+  ctx: CanvasRenderingContext2D,
+  line: string,
+  maxWidth: number,
+  y: number,
+  el: TextElement,
+  sizePx: number,
+): void {
   const lineWidth = measureWithSpacing(ctx, line, el.letterSpacing, sizePx);
   let x = 0;
-  if (el.align === 'center') x = (maxWidth - lineWidth) / 2;
-  else if (el.align === 'right') x = maxWidth - lineWidth;
-  else if (el.align === 'justify') {
+  if (el.align === "center") x = (maxWidth - lineWidth) / 2;
+  else if (el.align === "right") x = maxWidth - lineWidth;
+  else if (el.align === "justify") {
     const words = line.split(/\s+/).filter(Boolean);
     if (words.length > 1) {
-      const wordsWidth = words.reduce((a, w) => a + measureWithSpacing(ctx, w, el.letterSpacing, sizePx), 0);
+      const wordsWidth = words.reduce(
+        (a, w) => a + measureWithSpacing(ctx, w, el.letterSpacing, sizePx),
+        0,
+      );
       const gap = (maxWidth - wordsWidth) / (words.length - 1);
       let cx = 0;
       for (const w of words) {
@@ -187,8 +263,18 @@ function drawLineExport(ctx: CanvasRenderingContext2D, line: string, maxWidth: n
   }
   drawSpaced(ctx, line, x, y, el.letterSpacing, sizePx);
 }
-function drawSpaced(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, ls: number, sizePx: number): void {
-  if (!ls) { ctx.fillText(text, x, y); return; }
+function drawSpaced(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  ls: number,
+  sizePx: number,
+): void {
+  if (!ls) {
+    ctx.fillText(text, x, y);
+    return;
+  }
   let cx = x;
   for (const ch of text) {
     ctx.fillText(ch, cx, y);
@@ -196,22 +282,40 @@ function drawSpaced(ctx: CanvasRenderingContext2D, text: string, x: number, y: n
   }
 }
 
-async function drawImageExport(ctx: CanvasRenderingContext2D, el: ImageElement, pxPerMm: number): Promise<void> {
+async function drawImageExport(
+  ctx: CanvasRenderingContext2D,
+  el: ImageElement,
+  pxPerMm: number,
+): Promise<void> {
   let img: HTMLImageElement;
-  try { img = await loadImage(el.src); } catch { return; }
-  const x = el.x * pxPerMm, y = el.y * pxPerMm;
-  const w = el.width * pxPerMm, h = el.height * pxPerMm;
-  const iw = img.naturalWidth, ih = img.naturalHeight;
+  try {
+    img = await loadImage(el.src);
+  } catch {
+    return;
+  }
+  const x = el.x * pxPerMm,
+    y = el.y * pxPerMm;
+  const w = el.width * pxPerMm,
+    h = el.height * pxPerMm;
+  const iw = img.naturalWidth,
+    ih = img.naturalHeight;
   if (!iw || !ih) return;
-  let dx = x, dy = y, dw = w, dh = h;
-  if (el.fit === 'contain') {
+  let dx = x,
+    dy = y,
+    dw = w,
+    dh = h;
+  if (el.fit === "contain") {
     const s = Math.min(w / iw, h / ih);
-    dw = iw * s; dh = ih * s;
-    dx = x + (w - dw) / 2; dy = y + (h - dh) / 2;
-  } else if (el.fit === 'cover') {
+    dw = iw * s;
+    dh = ih * s;
+    dx = x + (w - dw) / 2;
+    dy = y + (h - dh) / 2;
+  } else if (el.fit === "cover") {
     const s = Math.max(w / iw, h / ih);
-    dw = iw * s; dh = ih * s;
-    dx = x + (w - dw) / 2; dy = y + (h - dh) / 2;
+    dw = iw * s;
+    dh = ih * s;
+    dx = x + (w - dw) / 2;
+    dy = y + (h - dh) / 2;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, y, w, h);
@@ -223,9 +327,14 @@ async function drawImageExport(ctx: CanvasRenderingContext2D, el: ImageElement, 
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-function drawCropMarks(ctx: CanvasRenderingContext2D, doc: PrintDocument, pxPerMm: number, bleed: { top: number; right: number; bottom: number; left: number }): void {
+function drawCropMarks(
+  ctx: CanvasRenderingContext2D,
+  doc: PrintDocument,
+  pxPerMm: number,
+  bleed: { top: number; right: number; bottom: number; left: number },
+): void {
   ctx.save();
-  ctx.strokeStyle = '#000';
+  ctx.strokeStyle = "#000";
   ctx.lineWidth = Math.max(1, 0.25 * pxPerMm);
   const len = 5 * pxPerMm; // 5mm marks
   const offset = 1 * pxPerMm;
