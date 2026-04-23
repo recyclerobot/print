@@ -42,7 +42,10 @@ export function buildToolbar(
         const blob = await exportBundle(store.doc);
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        const safe = (store.doc.name || "document").replace(/[^a-z0-9-_ ]/gi, "_");
+        const safe = (store.doc.name || "document").replace(
+          /[^a-z0-9-_ ]/gi,
+          "_",
+        );
         a.href = url;
         a.download = `${safe}.printbundle.zip`;
         a.click();
@@ -59,11 +62,7 @@ export function buildToolbar(
   importInput.addEventListener("change", async () => {
     const f = importInput.files?.[0];
     if (!f) return;
-    if (
-      !confirm(
-        "Importing will replace the current document. Continue?",
-      )
-    ) {
+    if (!confirm("Importing will replace the current document. Continue?")) {
       importInput.value = "";
       return;
     }

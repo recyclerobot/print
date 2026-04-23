@@ -66,7 +66,9 @@ export async function importBundle(file: File | Blob): Promise<PrintDocument> {
   const zip = await JSZip.loadAsync(file);
   const manifestEntry = zip.file("manifest.json");
   if (manifestEntry) {
-    const manifest = JSON.parse(await manifestEntry.async("string")) as Manifest;
+    const manifest = JSON.parse(
+      await manifestEntry.async("string"),
+    ) as Manifest;
     if (manifest.format !== BUNDLE_FORMAT) {
       throw new Error(`Unrecognized bundle format: ${manifest.format}`);
     }
@@ -88,7 +90,8 @@ export async function importBundle(file: File | Blob): Promise<PrintDocument> {
     const entry = zip.file(`assets/${filename}`);
     if (!entry) return null;
     const blob = await entry.async("blob");
-    const mime = mimeForName(filename) ?? blob.type ?? "application/octet-stream";
+    const mime =
+      mimeForName(filename) ?? blob.type ?? "application/octet-stream";
     const dataUrl = await blobToDataUrl(blob, mime);
     assetCache.set(filename, dataUrl);
     return dataUrl;
@@ -135,27 +138,41 @@ function decodeDataUrl(url: string): { mime: string; bytes: Uint8Array } {
 
 function extForMime(mime: string): string {
   switch (mime) {
-    case "image/png": return ".png";
-    case "image/jpeg": return ".jpg";
-    case "image/webp": return ".webp";
-    case "image/gif": return ".gif";
-    case "image/svg+xml": return ".svg";
-    case "image/bmp": return ".bmp";
-    default: return ".bin";
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    case "image/svg+xml":
+      return ".svg";
+    case "image/bmp":
+      return ".bmp";
+    default:
+      return ".bin";
   }
 }
 
 function mimeForName(name: string): string | null {
   const ext = name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
   switch (ext) {
-    case "png": return "image/png";
+    case "png":
+      return "image/png";
     case "jpg":
-    case "jpeg": return "image/jpeg";
-    case "webp": return "image/webp";
-    case "gif": return "image/gif";
-    case "svg": return "image/svg+xml";
-    case "bmp": return "image/bmp";
-    default: return null;
+    case "jpeg":
+      return "image/jpeg";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    case "svg":
+      return "image/svg+xml";
+    case "bmp":
+      return "image/bmp";
+    default:
+      return null;
   }
 }
 
