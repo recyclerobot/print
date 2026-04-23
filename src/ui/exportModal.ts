@@ -96,13 +96,9 @@ export function openExportModal(): void {
 
   // --- Marks ---
   body.appendChild(sectionTitle("Printer marks"));
-  const cropChk = checkbox(
-    "Crop / cut marks",
-    opts.cropMarks,
-    (v) => {
-      opts.cropMarks = v;
-    },
-  );
+  const cropChk = checkbox("Crop / cut marks", opts.cropMarks, (v) => {
+    opts.cropMarks = v;
+  });
   const registrationChk = checkbox(
     "Registration marks",
     opts.registrationMarks,
