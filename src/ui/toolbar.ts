@@ -1,9 +1,9 @@
 import { store } from "../store";
-import { exportPdf, type ExportDpi } from "../pdf";
 import { newImageElement, newRectElement, newTextElement } from "../store";
 import { A_SIZES } from "../types";
 import { DOCUMENT_PRESETS, findPreset } from "../presets";
 import { exportBundle, importBundle } from "../bundle";
+import { openExportModal } from "./exportModal";
 import type { Renderer } from "../webgl/renderer";
 
 export function buildToolbar(
@@ -266,43 +266,7 @@ export function buildToolbar(
   // Print preview & export
   const out = group("Output");
   out.appendChild(button("Print Preview", () => openPrintPreview()));
-  const dpiSel = select(["72", "150", "300", "600", "1200"], () => {});
-  dpiSel.value = "300";
-  out.appendChild(labeledControl("DPI", dpiSel));
-  out
-    .appendChild(
-      button("Export PDF", async () => {
-        const dpi = parseInt(dpiSel.value, 10) as ExportDpi;
-        const btn = host.querySelector(
-          "[data-export]",
-        ) as HTMLButtonElement | null;
-        if (btn) {
-          btn.disabled = true;
-          btn.textContent = "Exporting…";
-        }
-        try {
-          const blob = await exportPdf(store.doc, {
-            dpi,
-            includeBleed: true,
-            includeCropMarks: true,
-          });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `${store.doc.name || "document"}-${dpi}dpi.pdf`;
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } catch (e) {
-          alert("Export failed: " + (e as Error).message);
-        } finally {
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = "Export PDF";
-          }
-        }
-      }),
-    )
-    .setAttribute("data-export", "1");
+  out.appendChild(button("Export PDF…", () => openExportModal()));
 }
 
 function button(label: string, onClick: () => void): HTMLButtonElement {

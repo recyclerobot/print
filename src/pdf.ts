@@ -12,19 +12,46 @@ import { loadImage } from "./webgl/rasterize";
 
 export type ExportDpi = 72 | 150 | 300 | 600 | 1200;
 
+export type ExportSizeMode = "bruto" | "netto";
+export type ExportImageFormat = "jpeg" | "png";
+
 export interface ExportOptions {
   dpi: ExportDpi;
-  includeBleed: boolean;
-  includeCropMarks: boolean;
-  pages?: number[]; // page indices, default all
+  /**
+   * "bruto" = trim + bleed (bleedbox). "netto" = trim only (final cut size).
+   * Replaces the older includeBleed flag.
+   */
+  sizeMode: ExportSizeMode;
+  /** Draw printers' crop marks at the four corners of the trim box. */
+  cropMarks: boolean;
+  /** Draw registration marks (target circles) on each side. */
+  registrationMarks: boolean;
+  /** Output image codec inside the PDF. PNG = lossless, larger files. */
+  imageFormat: ExportImageFormat;
+  /** JPEG quality 0..1, ignored for PNG. */
+  jpegQuality: number;
+  /** Background color for the bleed/page surface. */
+  background: string;
+  /** 1-based page numbers; undefined = all pages. */
+  pages?: number[];
 }
+
+export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+  dpi: 300,
+  sizeMode: "bruto",
+  cropMarks: true,
+  registrationMarks: false,
+  imageFormat: "jpeg",
+  jpegQuality: 0.92,
+  background: "#ffffff",
+};
 
 export async function exportPdf(
   doc: PrintDocument,
   opts: ExportOptions,
 ): Promise<Blob> {
-  const dpi = opts.dpi;
-  const bleed = opts.includeBleed
+  const includeBleed = opts.sizeMode === "bruto";
+  const bleed = includeBleed
     ? doc.bleed
     : { top: 0, right: 0, bottom: 0, left: 0 };
   const pageWmm = doc.size.width + bleed.left + bleed.right;
@@ -37,7 +64,11 @@ export async function exportPdf(
     compress: true,
   });
 
-  const indices = opts.pages ?? doc.pages.map((_, i) => i);
+  const indices = (
+    opts.pages?.length
+      ? opts.pages.map((n) => n - 1)
+      : doc.pages.map((_, i) => i)
+  ).filter((i) => i >= 0 && i < doc.pages.length);
 
   for (let i = 0; i < indices.length; i++) {
     const page = doc.pages[indices[i]];
@@ -47,14 +78,9 @@ export async function exportPdf(
         [pageWmm, pageHmm],
         pageWmm > pageHmm ? "landscape" : "portrait",
       );
-    const dataUrl = await rasterizePageToDataUrl(
-      doc,
-      page,
-      dpi,
-      opts.includeBleed,
-      opts.includeCropMarks,
-    );
-    pdf.addImage(dataUrl, "JPEG", 0, 0, pageWmm, pageHmm, undefined, "FAST");
+    const dataUrl = await rasterizePageToDataUrl(doc, page, opts);
+    const fmt = opts.imageFormat === "png" ? "PNG" : "JPEG";
+    pdf.addImage(dataUrl, fmt, 0, 0, pageWmm, pageHmm, undefined, "FAST");
   }
   return pdf.output("blob");
 }
@@ -62,10 +88,10 @@ export async function exportPdf(
 async function rasterizePageToDataUrl(
   doc: PrintDocument,
   page: Page,
-  dpi: number,
-  includeBleed: boolean,
-  includeCropMarks: boolean,
+  opts: ExportOptions,
 ): Promise<string> {
+  const dpi = opts.dpi;
+  const includeBleed = opts.sizeMode === "bruto";
   const bleed = includeBleed
     ? doc.bleed
     : { top: 0, right: 0, bottom: 0, left: 0 };
@@ -79,9 +105,22 @@ async function rasterizePageToDataUrl(
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext("2d")!;
-  // Fill page background
-  ctx.fillStyle = page.background || "#ffffff";
+  // Fill page surface (bleed area + page area). Page background still wins
+  // over this for the trimbox area.
+  ctx.fillStyle = opts.background || "#ffffff";
   ctx.fillRect(0, 0, W, H);
+  if (includeBleed) {
+    ctx.fillStyle = page.background || "#ffffff";
+    ctx.fillRect(
+      bleed.left * pxPerMm,
+      bleed.top * pxPerMm,
+      doc.size.width * pxPerMm,
+      doc.size.height * pxPerMm,
+    );
+  } else {
+    ctx.fillStyle = page.background || "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+  }
 
   // Translate so that (0,0) corresponds to page top-left (inside bleed region).
   ctx.save();
@@ -93,12 +132,17 @@ async function rasterizePageToDataUrl(
   }
   ctx.restore();
 
-  if (includeCropMarks && includeBleed) {
+  if (opts.cropMarks && includeBleed) {
     drawCropMarks(ctx, doc, pxPerMm, bleed);
   }
+  if (opts.registrationMarks && includeBleed) {
+    drawRegistrationMarks(ctx, doc, pxPerMm, bleed);
+  }
 
-  // JPEG keeps file sizes manageable for high DPI; use quality based on DPI.
-  const quality = dpi >= 600 ? 0.95 : dpi >= 300 ? 0.92 : 0.88;
+  if (opts.imageFormat === "png") {
+    return canvas.toDataURL("image/png");
+  }
+  const quality = Math.max(0.1, Math.min(1, opts.jpegQuality));
   return canvas.toDataURL("image/jpeg", quality);
 }
 
@@ -363,5 +407,44 @@ function drawCropMarks(
     ctx.lineTo(x2, y2);
   }
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawRegistrationMarks(
+  ctx: CanvasRenderingContext2D,
+  doc: PrintDocument,
+  pxPerMm: number,
+  bleed: { top: number; right: number; bottom: number; left: number },
+): void {
+  ctx.save();
+  ctx.strokeStyle = "#000";
+  ctx.fillStyle = "#000";
+  ctx.lineWidth = Math.max(1, 0.2 * pxPerMm);
+  const r = 2 * pxPerMm; // 2mm radius target
+  const left = bleed.left * pxPerMm;
+  const top = bleed.top * pxPerMm;
+  const right = (bleed.left + doc.size.width) * pxPerMm;
+  const bottom = (bleed.top + doc.size.height) * pxPerMm;
+  // Centers placed in the middle of each bleed margin.
+  const centers: Array<[number, number]> = [
+    [(left + right) / 2, top - (bleed.top * pxPerMm) / 2], // top
+    [(left + right) / 2, bottom + (bleed.bottom * pxPerMm) / 2], // bottom
+    [left - (bleed.left * pxPerMm) / 2, (top + bottom) / 2], // left
+    [right + (bleed.right * pxPerMm) / 2, (top + bottom) / 2], // right
+  ];
+  for (const [cx, cy] of centers) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - r * 1.5, cy);
+    ctx.lineTo(cx + r * 1.5, cy);
+    ctx.moveTo(cx, cy - r * 1.5);
+    ctx.lineTo(cx, cy + r * 1.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }
