@@ -2,6 +2,8 @@ import { store } from "../store";
 import { exportPdf, type ExportDpi } from "../pdf";
 import { newImageElement, newRectElement, newTextElement } from "../store";
 import { A_SIZES } from "../types";
+import { DOCUMENT_PRESETS, findPreset } from "../presets";
+import { exportBundle, importBundle } from "../bundle";
 import type { Renderer } from "../webgl/renderer";
 
 export function buildToolbar(
@@ -34,6 +36,51 @@ export function buildToolbar(
       requestRender();
     }),
   );
+  file.appendChild(
+    button("Export", async () => {
+      try {
+        const blob = await exportBundle(store.doc);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const safe = (store.doc.name || "document").replace(/[^a-z0-9-_ ]/gi, "_");
+        a.href = url;
+        a.download = `${safe}.printbundle.zip`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        alert("Export failed: " + (e as Error).message);
+      }
+    }),
+  );
+  const importInput = document.createElement("input");
+  importInput.type = "file";
+  importInput.accept = ".zip,application/zip";
+  importInput.style.display = "none";
+  importInput.addEventListener("change", async () => {
+    const f = importInput.files?.[0];
+    if (!f) return;
+    if (
+      !confirm(
+        "Importing will replace the current document. Continue?",
+      )
+    ) {
+      importInput.value = "";
+      return;
+    }
+    try {
+      const doc = await importBundle(f);
+      store.loadDocument(doc);
+      renderer.invalidate();
+      renderer.fitToScreen();
+      requestRender();
+    } catch (e) {
+      alert("Import failed: " + (e as Error).message);
+    } finally {
+      importInput.value = "";
+    }
+  });
+  file.appendChild(importInput);
+  file.appendChild(button("Import", () => importInput.click()));
   const sizeSel = select(Object.keys(A_SIZES), (v) => {
     const s = A_SIZES[v];
     store.setDocumentMeta({ size: { ...s } });
@@ -51,6 +98,53 @@ export function buildToolbar(
     }
   }
   file.appendChild(labeledControl("Preset", sizeSel));
+
+  // Default templates: full document presets (size + bleed + safety zone).
+  const tplSel = select(
+    ["— select —", ...DOCUMENT_PRESETS.map((p) => p.name)],
+    () => {
+      /* applied by Apply button */
+    },
+  );
+  tplSel.title = "Built-in document presets";
+  // Reflect current document if it matches a preset.
+  for (const p of DOCUMENT_PRESETS) {
+    if (
+      Math.abs(p.size.width - store.doc.size.width) < 0.5 &&
+      Math.abs(p.size.height - store.doc.size.height) < 0.5 &&
+      Math.abs(p.bleed.top - store.doc.bleed.top) < 0.1 &&
+      Math.abs(p.margins.top - store.doc.margins.top) < 0.1
+    ) {
+      tplSel.value = p.name;
+      break;
+    }
+  }
+  file.appendChild(labeledControl("Template", tplSel));
+  file.appendChild(
+    button("Apply", () => {
+      const preset =
+        DOCUMENT_PRESETS.find((p) => p.name === tplSel.value) ??
+        findPreset(tplSel.value);
+      if (!preset) return;
+      store.setDocumentMeta({
+        size: { ...preset.size },
+        bleed: { ...preset.bleed },
+        margins: { ...preset.margins },
+      });
+      // Sync the size preset dropdown if the new size matches one.
+      for (const [name, s] of Object.entries(A_SIZES)) {
+        if (
+          Math.abs(s.width - preset.size.width) < 0.5 &&
+          Math.abs(s.height - preset.size.height) < 0.5
+        ) {
+          sizeSel.value = name;
+          break;
+        }
+      }
+      renderer.fitToScreen();
+      requestRender();
+    }),
+  );
 
   // Custom size
   const wIn = numInput(store.doc.size.width / 10, 0.1, 200, 0.1, (v) => {

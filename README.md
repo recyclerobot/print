@@ -1,6 +1,6 @@
-# Print — WebGL InDesign-style print designer
+# Print — WebGL print designer
 
-A static, single-page web app built with **Vite + TypeScript** that runs a full-page **WebGL2** canvas as an InDesign-style page layout tool. Documents are stored in your browser's `localStorage` — no server, no accounts.
+A static, single-page web app built with **Vite + TypeScript** that runs a full-page **WebGL2** canvas as a page layout tool. Documents are stored in your browser's `localStorage` — no server, no accounts.
 
 ## Features
 

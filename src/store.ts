@@ -388,6 +388,14 @@ class Store {
       this.selectedIds.clear();
     });
   }
+
+  loadDocument(doc: PrintDocument): void {
+    this.transact(() => {
+      this.doc = doc;
+      this.currentPageId = this.doc.pages[0]?.id ?? "";
+      this.selectedIds.clear();
+    });
+  }
 }
 
 export const store = new Store();
