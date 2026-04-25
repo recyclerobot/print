@@ -87,11 +87,7 @@ export function buildToolbar(
         .listProjects()
         .find((p) => p.id === store.currentProjectId);
       if (!meta) return;
-      if (
-        !confirm(
-          `Delete project "${meta.name}"? This cannot be undone.`,
-        )
-      )
+      if (!confirm(`Delete project "${meta.name}"? This cannot be undone.`))
         return;
       store.deleteProject(store.currentProjectId);
       renderer.invalidate();
@@ -112,7 +108,8 @@ export function buildToolbar(
       renderer.invalidate();
       requestRender();
     }),
-  );  file.appendChild(
+  );
+  file.appendChild(
     button("Export", async () => {
       try {
         const blob = await exportBundle(store.doc);
