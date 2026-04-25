@@ -5,17 +5,21 @@ import { attachInteraction } from "./interaction";
 import { buildToolbar } from "./ui/toolbar";
 import { buildPagesPanel } from "./ui/pagesPanel";
 import { buildPropertiesPanel } from "./ui/propertiesPanel";
+import { buildInsertToolbar } from "./ui/insertToolbar";
+import { buildLayersPanel } from "./ui/layersPanel";
 import { createRulers } from "./ui/rulers";
 
 const app = document.getElementById("app")!;
 app.innerHTML = `
   <div class="layout">
     <header class="topbar" id="toolbar"></header>
+    <nav class="tools-rail" id="insertTools"></nav>
     <aside class="left-panel" id="pages"></aside>
     <main class="canvas-host" id="canvasHost">
       <canvas id="canvas" tabindex="0"></canvas>
     </main>
     <aside class="right-panel" id="props"></aside>
+    <aside class="right-bottom" id="layers"></aside>
     <footer class="statusbar" id="status"></footer>
   </div>
 `;
@@ -45,12 +49,14 @@ const rulers = createRulers(canvasHost, renderer);
 attachInteraction(canvas, renderer, requestRender);
 
 buildToolbar(document.getElementById("toolbar")!, renderer, requestRender);
+buildInsertToolbar(document.getElementById("insertTools")!, requestRender);
 buildPagesPanel(document.getElementById("pages")!, renderer, requestRender);
 buildPropertiesPanel(
   document.getElementById("props")!,
   renderer,
   requestRender,
 );
+buildLayersPanel(document.getElementById("layers")!, renderer, requestRender);
 
 window.addEventListener("resize", () => requestRender());
 store.subscribe(() => requestRender());

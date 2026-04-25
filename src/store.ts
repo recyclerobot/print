@@ -10,8 +10,25 @@ import type {
 } from "./types";
 import { A_SIZES } from "./types";
 
-const STORAGE_KEY = "print.document.v1";
+const LEGACY_DOC_KEY = "print.document.v1";
 const PREFS_KEY = "print.prefs.v1";
+const PROJECTS_INDEX_KEY = "print.projects.index.v1";
+const PROJECT_PREFIX = "print.project.";
+
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  updatedAt: number;
+}
+
+interface ProjectsIndex {
+  currentId: string;
+  projects: ProjectMeta[];
+}
+
+function projectKey(id: string): string {
+  return `${PROJECT_PREFIX}${id}.v1`;
+}
 
 export interface Prefs {
   unit: "mm" | "cm" | "in" | "pt";
@@ -152,22 +169,88 @@ class Store {
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private suspendHistory = false;
+  private projectsIndex: ProjectsIndex;
 
   constructor() {
-    this.doc = this.loadDoc();
     this.prefs = this.loadPrefs();
+    this.projectsIndex = this.loadProjectsIndex();
+    this.doc = this.loadCurrentDoc();
     this.currentPageId = this.doc.pages[0].id;
   }
 
-  private loadDoc(): PrintDocument {
+  private loadProjectsIndex(): ProjectsIndex {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(PROJECTS_INDEX_KEY);
+      if (raw) {
+        const idx = JSON.parse(raw) as ProjectsIndex;
+        if (idx && Array.isArray(idx.projects) && idx.projects.length) {
+          return idx;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    // Migrate from legacy single-doc storage if present.
+    try {
+      const legacy = localStorage.getItem(LEGACY_DOC_KEY);
+      if (legacy) {
+        const doc = JSON.parse(legacy) as PrintDocument;
+        if (doc && doc.id) {
+          localStorage.setItem(projectKey(doc.id), legacy);
+          const idx: ProjectsIndex = {
+            currentId: doc.id,
+            projects: [
+              {
+                id: doc.id,
+                name: doc.name || "Untitled Document",
+                updatedAt: doc.updatedAt || Date.now(),
+              },
+            ],
+          };
+          localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(idx));
+          // Keep the legacy key around for one cycle in case of rollback;
+          // it will be ignored on subsequent loads.
+          return idx;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    // No projects yet — create a fresh one.
+    const fresh = newDocument();
+    localStorage.setItem(projectKey(fresh.id), JSON.stringify(fresh));
+    const idx: ProjectsIndex = {
+      currentId: fresh.id,
+      projects: [
+        { id: fresh.id, name: fresh.name, updatedAt: fresh.updatedAt },
+      ],
+    };
+    localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(idx));
+    return idx;
+  }
+
+  private loadCurrentDoc(): PrintDocument {
+    const id = this.projectsIndex.currentId;
+    try {
+      const raw = localStorage.getItem(projectKey(id));
       if (raw) return JSON.parse(raw) as PrintDocument;
     } catch {
       /* ignore */
     }
-    return newDocument();
+    // Project record missing — fall back to creating a fresh doc with same id.
+    const fresh = newDocument();
+    fresh.id = id;
+    localStorage.setItem(projectKey(id), JSON.stringify(fresh));
+    return fresh;
   }
+
+  private persistIndex(): void {
+    localStorage.setItem(
+      PROJECTS_INDEX_KEY,
+      JSON.stringify(this.projectsIndex),
+    );
+  }
+
   private loadPrefs(): Prefs {
     try {
       const raw = localStorage.getItem(PREFS_KEY);
@@ -180,8 +263,34 @@ class Store {
 
   save(): void {
     this.doc.updatedAt = Date.now();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.doc));
+    localStorage.setItem(projectKey(this.doc.id), JSON.stringify(this.doc));
     localStorage.setItem(PREFS_KEY, JSON.stringify(this.prefs));
+    // Sync index metadata for this project.
+    const meta = this.projectsIndex.projects.find((p) => p.id === this.doc.id);
+    if (meta) {
+      let dirty = false;
+      if (meta.name !== this.doc.name) {
+        meta.name = this.doc.name;
+        dirty = true;
+      }
+      if (meta.updatedAt !== this.doc.updatedAt) {
+        meta.updatedAt = this.doc.updatedAt;
+        dirty = true;
+      }
+      if (this.projectsIndex.currentId !== this.doc.id) {
+        this.projectsIndex.currentId = this.doc.id;
+        dirty = true;
+      }
+      if (dirty) this.persistIndex();
+    } else {
+      this.projectsIndex.projects.push({
+        id: this.doc.id,
+        name: this.doc.name,
+        updatedAt: this.doc.updatedAt,
+      });
+      this.projectsIndex.currentId = this.doc.id;
+      this.persistIndex();
+    }
   }
 
   subscribe(fn: Listener): () => void {
@@ -390,11 +499,201 @@ class Store {
   }
 
   loadDocument(doc: PrintDocument): void {
+    // Imports/loads replace the contents of the *current* project so the
+    // project list stays predictable. Preserve the current project id and
+    // creation time; bump updatedAt.
+    const currentId = this.doc.id;
+    const createdAt = this.doc.createdAt;
     this.transact(() => {
-      this.doc = doc;
+      this.doc = { ...doc, id: currentId, createdAt, updatedAt: Date.now() };
       this.currentPageId = this.doc.pages[0]?.id ?? "";
       this.selectedIds.clear();
     });
+  }
+
+  // --- Project management ---------------------------------------------------
+
+  listProjects(): ProjectMeta[] {
+    return [...this.projectsIndex.projects].sort(
+      (a, b) => b.updatedAt - a.updatedAt,
+    );
+  }
+
+  get currentProjectId(): string {
+    return this.doc.id;
+  }
+
+  createProject(name = "Untitled Document"): ProjectMeta {
+    const doc = newDocument(this.doc.size);
+    doc.name = name;
+    localStorage.setItem(projectKey(doc.id), JSON.stringify(doc));
+    const meta: ProjectMeta = {
+      id: doc.id,
+      name: doc.name,
+      updatedAt: doc.updatedAt,
+    };
+    this.projectsIndex.projects.push(meta);
+    this.projectsIndex.currentId = doc.id;
+    this.persistIndex();
+    // Switch to the new project (resets history).
+    this.doc = doc;
+    this.currentPageId = doc.pages[0].id;
+    this.selectedIds.clear();
+    this.undoStack.length = 0;
+    this.redoStack.length = 0;
+    this.emit();
+    return meta;
+  }
+
+  switchProject(id: string): void {
+    if (id === this.doc.id) return;
+    const meta = this.projectsIndex.projects.find((p) => p.id === id);
+    if (!meta) return;
+    // Persist current first so nothing is lost.
+    this.save();
+    let next: PrintDocument | null = null;
+    try {
+      const raw = localStorage.getItem(projectKey(id));
+      if (raw) next = JSON.parse(raw) as PrintDocument;
+    } catch {
+      /* ignore */
+    }
+    if (!next) {
+      // Project entry without storage — recreate empty doc with same id/name.
+      next = newDocument();
+      next.id = id;
+      next.name = meta.name;
+      localStorage.setItem(projectKey(id), JSON.stringify(next));
+    }
+    this.doc = next;
+    this.currentPageId = this.doc.pages[0]?.id ?? "";
+    this.selectedIds.clear();
+    this.undoStack.length = 0;
+    this.redoStack.length = 0;
+    this.projectsIndex.currentId = id;
+    this.persistIndex();
+    this.emit();
+  }
+
+  renameProject(id: string, name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const meta = this.projectsIndex.projects.find((p) => p.id === id);
+    if (!meta) return;
+    meta.name = trimmed;
+    this.persistIndex();
+    if (id === this.doc.id) {
+      // Update via transact so it goes through history & save pipeline.
+      this.transact(() => {
+        this.doc.name = trimmed;
+      });
+    } else {
+      try {
+        const raw = localStorage.getItem(projectKey(id));
+        if (raw) {
+          const d = JSON.parse(raw) as PrintDocument;
+          d.name = trimmed;
+          localStorage.setItem(projectKey(id), JSON.stringify(d));
+        }
+      } catch {
+        /* ignore */
+      }
+      this.emit();
+    }
+  }
+
+  deleteProject(id: string): void {
+    const idx = this.projectsIndex.projects.findIndex((p) => p.id === id);
+    if (idx < 0) return;
+    this.projectsIndex.projects.splice(idx, 1);
+    try {
+      localStorage.removeItem(projectKey(id));
+    } catch {
+      /* ignore */
+    }
+    if (this.projectsIndex.projects.length === 0) {
+      // Always keep at least one project around.
+      const fresh = newDocument();
+      localStorage.setItem(projectKey(fresh.id), JSON.stringify(fresh));
+      this.projectsIndex.projects.push({
+        id: fresh.id,
+        name: fresh.name,
+        updatedAt: fresh.updatedAt,
+      });
+      this.projectsIndex.currentId = fresh.id;
+      this.persistIndex();
+      this.doc = fresh;
+      this.currentPageId = fresh.pages[0].id;
+      this.selectedIds.clear();
+      this.undoStack.length = 0;
+      this.redoStack.length = 0;
+      this.emit();
+      return;
+    }
+    if (id === this.doc.id) {
+      // Switch to the most recently updated remaining project.
+      const next = [...this.projectsIndex.projects].sort(
+        (a, b) => b.updatedAt - a.updatedAt,
+      )[0];
+      let nextDoc: PrintDocument | null = null;
+      try {
+        const raw = localStorage.getItem(projectKey(next.id));
+        if (raw) nextDoc = JSON.parse(raw) as PrintDocument;
+      } catch {
+        /* ignore */
+      }
+      if (!nextDoc) {
+        nextDoc = newDocument();
+        nextDoc.id = next.id;
+        nextDoc.name = next.name;
+        localStorage.setItem(projectKey(next.id), JSON.stringify(nextDoc));
+      }
+      this.doc = nextDoc;
+      this.currentPageId = this.doc.pages[0]?.id ?? "";
+      this.selectedIds.clear();
+      this.undoStack.length = 0;
+      this.redoStack.length = 0;
+      this.projectsIndex.currentId = next.id;
+      this.persistIndex();
+      this.emit();
+    } else {
+      this.persistIndex();
+      this.emit();
+    }
+  }
+
+  duplicateProject(id: string): ProjectMeta | undefined {
+    const meta = this.projectsIndex.projects.find((p) => p.id === id);
+    if (!meta) return;
+    let source: PrintDocument | null = null;
+    if (id === this.doc.id) {
+      source = JSON.parse(JSON.stringify(this.doc)) as PrintDocument;
+    } else {
+      try {
+        const raw = localStorage.getItem(projectKey(id));
+        if (raw) source = JSON.parse(raw) as PrintDocument;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!source) return;
+    const copy: PrintDocument = {
+      ...source,
+      id: `doc_${Math.random().toString(36).slice(2, 10)}`,
+      name: `${source.name} (copy)`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    localStorage.setItem(projectKey(copy.id), JSON.stringify(copy));
+    const m: ProjectMeta = {
+      id: copy.id,
+      name: copy.name,
+      updatedAt: copy.updatedAt,
+    };
+    this.projectsIndex.projects.push(m);
+    this.persistIndex();
+    this.emit();
+    return m;
   }
 }
 

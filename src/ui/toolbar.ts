@@ -1,5 +1,4 @@
 import { store } from "../store";
-import { newImageElement, newRectElement, newTextElement } from "../store";
 import { A_SIZES } from "../types";
 import { DOCUMENT_PRESETS, findPreset } from "../presets";
 import { exportBundle, importBundle } from "../bundle";
@@ -26,6 +25,84 @@ export function buildToolbar(
     return g;
   };
 
+  // Project group: switch / rename / delete / new project
+  const proj = group("Project");
+  const projSel = document.createElement("select");
+  projSel.className = "select";
+  projSel.title = "Switch project";
+  const refreshProjects = (): void => {
+    const list = store.listProjects();
+    projSel.innerHTML = "";
+    for (const p of list) {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name || "Untitled";
+      if (p.id === store.currentProjectId) opt.selected = true;
+      projSel.appendChild(opt);
+    }
+    nameInput.value = store.doc.name;
+  };
+  projSel.addEventListener("change", () => {
+    store.switchProject(projSel.value);
+    renderer.invalidate();
+    renderer.fitToScreen();
+    requestRender();
+  });
+  proj.appendChild(labeledControl("Open", projSel));
+
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.className = "num";
+  nameInput.style.width = "160px";
+  nameInput.title = "Project name (saved automatically)";
+  nameInput.value = store.doc.name;
+  nameInput.addEventListener("change", () => {
+    const v = nameInput.value.trim();
+    if (!v || v === store.doc.name) {
+      nameInput.value = store.doc.name;
+      return;
+    }
+    store.renameProject(store.currentProjectId, v);
+  });
+  proj.appendChild(labeledControl("Name", nameInput));
+
+  proj.appendChild(
+    button("New Project", () => {
+      const name = prompt("Name for the new project:", "Untitled Document");
+      if (name == null) return;
+      store.createProject(name.trim() || "Untitled Document");
+      renderer.invalidate();
+      renderer.fitToScreen();
+      requestRender();
+    }),
+  );
+  proj.appendChild(
+    button("Duplicate", () => {
+      store.duplicateProject(store.currentProjectId);
+    }),
+  );
+  proj.appendChild(
+    button("Delete", () => {
+      const meta = store
+        .listProjects()
+        .find((p) => p.id === store.currentProjectId);
+      if (!meta) return;
+      if (
+        !confirm(
+          `Delete project "${meta.name}"? This cannot be undone.`,
+        )
+      )
+        return;
+      store.deleteProject(store.currentProjectId);
+      renderer.invalidate();
+      renderer.fitToScreen();
+      requestRender();
+    }),
+  );
+
+  store.subscribe(refreshProjects);
+  refreshProjects();
+
   // File group
   const file = group("");
   file.appendChild(
@@ -35,8 +112,7 @@ export function buildToolbar(
       renderer.invalidate();
       requestRender();
     }),
-  );
-  file.appendChild(
+  );  file.appendChild(
     button("Export", async () => {
       try {
         const blob = await exportBundle(store.doc);
@@ -158,56 +234,6 @@ export function buildToolbar(
   });
   file.appendChild(labeledControl("W (cm)", wIn));
   file.appendChild(labeledControl("H (cm)", hIn));
-
-  // Insert group
-  const insert = group("Insert");
-  insert.appendChild(
-    button("+ Text", () => {
-      store.addElement(newTextElement({ x: 20, y: 20, width: 80, height: 30 }));
-      requestRender();
-    }),
-  );
-  insert.appendChild(
-    button("+ Rect", () => {
-      store.addElement(newRectElement());
-      requestRender();
-    }),
-  );
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
-  fileInput.accept = "image/*";
-  fileInput.style.display = "none";
-  fileInput.addEventListener("change", () => {
-    const f = fileInput.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const src = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const ratio = img.naturalWidth / img.naturalHeight;
-        const w = 80,
-          h = w / ratio;
-        store.addElement(
-          newImageElement({
-            src,
-            x: 20,
-            y: 20,
-            width: w,
-            height: h,
-            naturalWidth: img.naturalWidth,
-            naturalHeight: img.naturalHeight,
-          }),
-        );
-        requestRender();
-      };
-      img.src = src;
-    };
-    reader.readAsDataURL(f);
-    fileInput.value = "";
-  });
-  insert.appendChild(fileInput);
-  insert.appendChild(button("+ Image", () => fileInput.click()));
 
   // View group
   const view = group("View");

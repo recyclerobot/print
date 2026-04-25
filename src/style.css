@@ -20,18 +20,28 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 240px 1fr 280px;
-  grid-template-rows: 48px 1fr 24px;
+  grid-template-columns: 44px 240px 1fr 280px;
+  grid-template-rows: 48px 1fr 220px 24px;
   grid-template-areas:
-    "tb tb tb"
-    "lp ch rp"
-    "sb sb sb";
+    "tb tb tb tb"
+    "tr lp ch rp"
+    "tr lp ch rb"
+    "sb sb sb sb";
   height: 100vh;
   width: 100vw;
 }
 .topbar { grid-area: tb; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; padding: 0 10px; overflow-x: auto; }
+.tools-rail {
+  grid-area: tr; background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0;
+}
 .left-panel { grid-area: lp; background: var(--panel); border-right: 1px solid var(--border); padding: 10px; overflow-y: auto; }
 .right-panel { grid-area: rp; background: var(--panel); border-left: 1px solid var(--border); padding: 10px; overflow-y: auto; }
+.right-bottom {
+  grid-area: rb; background: var(--panel);
+  border-left: 1px solid var(--border); border-top: 1px solid var(--border);
+  padding: 10px; overflow-y: auto;
+}
 .statusbar { grid-area: sb; background: var(--panel-2); border-top: 1px solid var(--border); color: var(--muted); padding: 0 10px; line-height: 24px; font-size: 12px; }
 .canvas-host { grid-area: ch; position: relative; background: #1f1f24; overflow: hidden; }
 canvas#canvas { position: absolute; left: 22px; top: 22px; width: calc(100% - 22px); height: calc(100% - 22px); display: block; outline: none; }
@@ -151,3 +161,52 @@ input[type=color] { width: 100%; height: 26px; padding: 1px; background: transpa
 .modal-summary strong { color: var(--text); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { background: var(--accent-2); }
+
+/* --- Insert tools rail --- */
+.rail-btn {
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; font-size: 16px; line-height: 1; padding: 0;
+}
+.rail-btn:hover { background: #2c2c33; border-color: #3a3a40; }
+.rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* --- Layers panel --- */
+.layer-list { display: flex; flex-direction: column; gap: 2px; }
+.layer-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto auto;
+  gap: 6px; align-items: center;
+  padding: 4px 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  position: relative;
+  user-select: none;
+}
+.layer-item.active { border-color: var(--accent); background: #233a5e; }
+.layer-item.hidden .layer-name, .layer-item.hidden .layer-icon { opacity: 0.4; font-style: italic; }
+.layer-item.dragging { opacity: 0.5; }
+.layer-item.drop-before::before,
+.layer-item.drop-after::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 2px; background: var(--accent);
+}
+.layer-item.drop-before::before { top: -1px; }
+.layer-item.drop-after::after { bottom: -1px; }
+.layer-icon {
+  width: 18px; height: 18px; display: grid; place-items: center;
+  font-size: 11px; color: var(--muted);
+}
+.layer-name {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.layer-icon-btn {
+  background: transparent; border: none; color: var(--muted);
+  cursor: pointer; padding: 2px 4px; font-size: 12px; line-height: 1;
+  border-radius: 3px;
+}
+.layer-icon-btn:hover { background: #2c2c33; color: var(--text); }
