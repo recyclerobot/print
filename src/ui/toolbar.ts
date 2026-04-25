@@ -443,8 +443,7 @@ function createMenu(opts: MenuOptions): MenuHandle {
       if (!panel) return;
       const pr = panel.getBoundingClientRect();
       const overflow = pr.right - window.innerWidth + 8;
-      if (overflow > 0)
-        panel.style.left = `${Math.round(r.left - overflow)}px`;
+      if (overflow > 0) panel.style.left = `${Math.round(r.left - overflow)}px`;
     });
     btn.classList.add("open");
     document.addEventListener("mousedown", onDocDown, true);
