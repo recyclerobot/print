@@ -134,9 +134,7 @@ export function createInlineTextEditor(
         el.text = originalText;
         el.hidden = originalHidden;
         store.transact(() => {
-          const t = store.currentPage?.elements.find(
-            (e) => e.id === editingId,
-          );
+          const t = store.currentPage?.elements.find((e) => e.id === editingId);
           if (t && t.type === "text") t.text = finalText;
         });
       } else {
