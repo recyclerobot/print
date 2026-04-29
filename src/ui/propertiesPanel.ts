@@ -13,12 +13,47 @@ export function buildPropertiesPanel(
   renderer: Renderer,
   requestRender: () => void,
 ): void {
+  let lastSelKey = "";
+  let lastPageId = "";
+
   const render = (): void => {
+    // If the user is currently typing in a control inside this panel and the
+    // selection / page hasn't changed, skip the rebuild so focus + caret are
+    // preserved. The underlying input handlers already pushed values into the
+    // store; the panel doesn't need to be redrawn until the selection changes.
+    const sel = store.selected();
+    const selKey = sel.map((e) => e.id).join(",");
+    const pageId = store.currentPageId;
+    const active = document.activeElement as HTMLElement | null;
+    const editingHere =
+      active &&
+      host.contains(active) &&
+      (active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.tagName === "SELECT" ||
+        active.isContentEditable);
+    if (
+      editingHere &&
+      selKey === lastSelKey &&
+      pageId === lastPageId &&
+      // For text edits driven from the canvas overlay, we still want
+      // the textarea value here to reflect the latest store state.
+      // The handlers below set values from the store on rebuild.
+      true
+    ) {
+      // Sync the focused textarea value if it represents the selected text
+      // element's text — keeps panel and canvas overlay consistent without
+      // a full rebuild.
+      syncLiveTextarea(host, sel);
+      return;
+    }
+    lastSelKey = selKey;
+    lastPageId = pageId;
+
     host.innerHTML = "";
     // Document properties at top
     documentSection(host, requestRender, renderer);
 
-    const sel = store.selected();
     if (!sel.length) {
       const empty = document.createElement("div");
       empty.className = "empty";
@@ -48,6 +83,21 @@ export function buildPropertiesPanel(
   };
   store.subscribe(render);
   render();
+}
+
+// When the panel skips a full rebuild because a control is focused, keep the
+// non-focused inputs in sync with the latest store values. Currently we only
+// need to sync transform numeric inputs and the text textarea so the user can
+// see their inline-edit reflected here too.
+function syncLiveTextarea(host: HTMLElement, sel: AnyElement[]): void {
+  if (sel.length !== 1 || sel[0].type !== "text") return;
+  const el = sel[0];
+  const ta = host.querySelector(
+    "textarea.text-area",
+  ) as HTMLTextAreaElement | null;
+  if (ta && document.activeElement !== ta && ta.value !== el.text) {
+    ta.value = el.text;
+  }
 }
 
 function documentSection(
@@ -367,8 +417,44 @@ function imageSection(
   if (el.naturalWidth && el.naturalHeight) {
     const r = document.createElement("div");
     r.className = "readout small";
-    r.textContent = `Source: ${el.naturalWidth} × ${el.naturalHeight}px`;
+    r.textContent = `${el.naturalWidth} × ${el.naturalHeight}px`;
     grid.appendChild(field("Source", r));
+
+    // Effective print DPI: source pixels per inch when rendered at the current
+    // element size on the page. Use the *fit* dimension that limits resolution.
+    const wIn = el.width / 25.4;
+    const hIn = el.height / 25.4;
+    const dpiW = wIn > 0 ? el.naturalWidth / wIn : 0;
+    const dpiH = hIn > 0 ? el.naturalHeight / hIn : 0;
+    let dpi = 0;
+    if (el.fit === "contain") {
+      // Whichever axis is the binding constraint determines actual sampling.
+      dpi = Math.min(dpiW, dpiH);
+    } else if (el.fit === "cover") {
+      dpi = Math.max(dpiW, dpiH);
+    } else {
+      // 'fill' stretches independently — report the lower of the two.
+      dpi = Math.min(dpiW, dpiH);
+    }
+    const dpiEl = document.createElement("div");
+    dpiEl.className = "readout small dpi-readout";
+    const rounded = Math.round(dpi);
+    let cls = "ok";
+    let label = "Excellent";
+    if (rounded < 150) {
+      cls = "bad";
+      label = "Low — may look pixelated in print";
+    } else if (rounded < 220) {
+      cls = "warn";
+      label = "OK for draft prints";
+    } else if (rounded < 300) {
+      cls = "warn";
+      label = "Good";
+    }
+    dpiEl.classList.add(cls);
+    dpiEl.textContent = `${rounded} DPI`;
+    dpiEl.title = `${label} (${Math.round(dpiW)} × ${Math.round(dpiH)} DPI)`;
+    grid.appendChild(field("Print DPI", dpiEl));
   }
   host.appendChild(grid);
 }

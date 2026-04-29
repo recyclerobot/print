@@ -1,5 +1,6 @@
 import { store } from "../store";
 import { newImageElement, newRectElement, newTextElement } from "../store";
+import { prepareImportedImage } from "../imageImport";
 
 // Vertical "Insert" rail on the far left. Mirrors the buttons that previously
 // lived in the top toolbar's "Insert" group.
@@ -28,34 +29,30 @@ export function buildInsertToolbar(
   fileInput.type = "file";
   fileInput.accept = "image/*";
   fileInput.style.display = "none";
-  fileInput.addEventListener("change", () => {
+  fileInput.addEventListener("change", async () => {
     const f = fileInput.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const src = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const ratio = img.naturalWidth / img.naturalHeight;
-        const w = 80;
-        const h = w / ratio;
-        store.addElement(
-          newImageElement({
-            src,
-            x: 20,
-            y: 20,
-            width: w,
-            height: h,
-            naturalWidth: img.naturalWidth,
-            naturalHeight: img.naturalHeight,
-          }),
-        );
-        requestRender();
-      };
-      img.src = src;
-    };
-    reader.readAsDataURL(f);
     fileInput.value = "";
+    if (!f) return;
+    try {
+      const prepared = await prepareImportedImage(f);
+      // Default place: 80mm wide, preserving aspect ratio.
+      const w = 80;
+      const h = w / (prepared.naturalWidth / prepared.naturalHeight);
+      store.addElement(
+        newImageElement({
+          src: prepared.dataUrl,
+          x: 20,
+          y: 20,
+          width: w,
+          height: h,
+          naturalWidth: prepared.naturalWidth,
+          naturalHeight: prepared.naturalHeight,
+        }),
+      );
+      requestRender();
+    } catch (e) {
+      alert("Image import failed: " + (e as Error).message);
+    }
   });
   host.appendChild(fileInput);
   host.appendChild(railButton("🖼", "Add image", () => fileInput.click()));

@@ -5,6 +5,27 @@ import { exportBundle, importBundle } from "../bundle";
 import { openExportModal } from "./exportModal";
 import type { Renderer } from "../webgl/renderer";
 
+// Stroke-based 14×14 SVG icons sized for the topbar toggle cluster.
+const SVG = (path: string): string =>
+  `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+const ICONS = {
+  ruler: SVG(
+    `<path d="M2 11l9-9 3 3-9 9z"/><path d="M4.5 8.5l1 1M6.5 6.5l1.5 1.5M8.5 4.5l1 1"/>`,
+  ),
+  margins: SVG(
+    `<rect x="2.5" y="2.5" width="11" height="11" rx="0.5"/><rect x="5" y="5" width="6" height="6" stroke-dasharray="1.5 1.5"/>`,
+  ),
+  bleed: SVG(
+    `<rect x="2.5" y="2.5" width="11" height="11" rx="0.5" stroke-dasharray="1.5 1.5"/><rect x="4.5" y="4.5" width="7" height="7"/>`,
+  ),
+  grid: SVG(
+    `<rect x="2.5" y="2.5" width="11" height="11" rx="0.5"/><path d="M2.5 6.5h11M2.5 9.5h11M6.5 2.5v11M9.5 2.5v11"/>`,
+  ),
+  snap: SVG(
+    `<path d="M3 3l5 5M8 8l5 5"/><path d="M8 5.5v5M5.5 8h5"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/>`,
+  ),
+};
+
 export function buildToolbar(
   host: HTMLElement,
   renderer: Renderer,
@@ -308,7 +329,7 @@ export function buildToolbar(
   const view = document.createElement("div");
   view.className = "tb-cluster";
   view.appendChild(
-    toggleIconBtn("R", "Rulers", store.prefs.showRulers, (v) => {
+    toggleIconBtn(ICONS.ruler, "Rulers", store.prefs.showRulers, (v) => {
       store.prefs.showRulers = v;
       store.save();
       document.body.classList.toggle("no-rulers", !v);
@@ -316,7 +337,7 @@ export function buildToolbar(
     }),
   );
   view.appendChild(
-    toggleIconBtn("M", "Margins", store.prefs.showMargins, (v) => {
+    toggleIconBtn(ICONS.margins, "Margins", store.prefs.showMargins, (v) => {
       store.prefs.showMargins = v;
       renderer.showMargins = v;
       store.save();
@@ -324,7 +345,7 @@ export function buildToolbar(
     }),
   );
   view.appendChild(
-    toggleIconBtn("B", "Bleed", store.prefs.showBleed, (v) => {
+    toggleIconBtn(ICONS.bleed, "Bleed", store.prefs.showBleed, (v) => {
       store.prefs.showBleed = v;
       renderer.showBleed = v;
       store.save();
@@ -332,7 +353,7 @@ export function buildToolbar(
     }),
   );
   view.appendChild(
-    toggleIconBtn("G", "Grid", store.prefs.showGrid, (v) => {
+    toggleIconBtn(ICONS.grid, "Grid", store.prefs.showGrid, (v) => {
       store.prefs.showGrid = v;
       renderer.showGrid = v;
       store.save();
@@ -340,7 +361,7 @@ export function buildToolbar(
     }),
   );
   view.appendChild(
-    toggleIconBtn("S", "Snap to grid", store.prefs.snapEnabled, (v) => {
+    toggleIconBtn(ICONS.snap, "Snap to grid", store.prefs.snapEnabled, (v) => {
       store.prefs.snapEnabled = v;
       store.save();
     }),
@@ -515,7 +536,7 @@ function iconTextBtn(
 }
 
 function toggleIconBtn(
-  label: string,
+  glyphOrSvg: string,
   title: string,
   initial: boolean,
   onChange: (v: boolean) => void,
@@ -524,7 +545,13 @@ function toggleIconBtn(
   b.className = "tb-iconbtn toggle";
   b.type = "button";
   b.title = title;
-  b.textContent = label;
+  b.setAttribute("aria-label", title);
+  if (glyphOrSvg.trim().startsWith("<")) {
+    b.innerHTML = glyphOrSvg;
+    b.classList.add("with-icon");
+  } else {
+    b.textContent = glyphOrSvg;
+  }
   b.classList.toggle("on", initial);
   b.addEventListener("click", () => {
     const next = !b.classList.contains("on");

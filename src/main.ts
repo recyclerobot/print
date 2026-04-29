@@ -2,6 +2,7 @@ import "./style.css";
 import { store } from "./store";
 import { Renderer } from "./webgl/renderer";
 import { attachInteraction } from "./interaction";
+import { createInlineTextEditor } from "./inlineTextEdit";
 import { buildToolbar } from "./ui/toolbar";
 import { buildPagesPanel } from "./ui/pagesPanel";
 import { buildPropertiesPanel } from "./ui/propertiesPanel";
@@ -41,12 +42,14 @@ function requestRender(): void {
     renderer.setDocument(store.doc, store.currentPageId, store.selectedIds);
     renderer.render();
     rulers.draw();
+    inlineEditor.reposition();
     updateStatus();
   });
 }
 
 const rulers = createRulers(canvasHost, renderer);
-attachInteraction(canvas, renderer, requestRender);
+const inlineEditor = createInlineTextEditor(canvas, renderer, requestRender);
+attachInteraction(canvas, renderer, requestRender, inlineEditor);
 
 buildToolbar(document.getElementById("toolbar")!, renderer, requestRender);
 buildInsertToolbar(document.getElementById("insertTools")!, requestRender);

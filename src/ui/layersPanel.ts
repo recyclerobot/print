@@ -2,6 +2,30 @@ import { store } from "../store";
 import type { AnyElement } from "../types";
 import type { Renderer } from "../webgl/renderer";
 
+// Tiny stroke-icon set for the layers panel. Keeping the markup local avoids
+// pulling in an icon library while giving us crisp scalable glyphs.
+const SVG = (path: string): string =>
+  `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+const ICONS = {
+  text: SVG(`<path d="M3 4h10M8 4v9M5.5 13h5"/>`),
+  rect: SVG(`<rect x="2.5" y="3.5" width="11" height="9" rx="1"/>`),
+  image: SVG(
+    `<rect x="2" y="3" width="12" height="10" rx="1"/><circle cx="6" cy="7" r="1.2"/><path d="M2.5 12l3.5-3.5 2.5 2.5L11 8.5l2.5 2.5"/>`,
+  ),
+  eye: SVG(
+    `<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="1.8"/>`,
+  ),
+  eyeOff: SVG(
+    `<path d="M2 2l12 12"/><path d="M3.5 5.7C2.2 6.8 1.5 8 1.5 8s2.4 4.5 6.5 4.5c1.2 0 2.2-.3 3.1-.8"/><path d="M6.4 4c.5-.1 1-.2 1.6-.2 4.1 0 6.5 4.2 6.5 4.2s-.6 1-1.7 2.1"/><path d="M9.6 9.6a2 2 0 0 1-2.7-2.7"/>`,
+  ),
+  lock: SVG(
+    `<rect x="3.5" y="7" width="9" height="6" rx="1"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/>`,
+  ),
+  unlock: SVG(
+    `<rect x="3.5" y="7" width="9" height="6" rx="1"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 4.7-1.1"/>`,
+  ),
+};
+
 // Layers panel for the current page. Top of the list = front-most.
 // Internally, page.elements is back-to-front (later = drawn on top), so we
 // reverse for display.
@@ -11,6 +35,12 @@ export function buildLayersPanel(
   requestRender: () => void,
 ): void {
   let dragSourceId: string | null = null;
+  // Drag operations replace the panel DOM mid-drag, so the original element's
+  // `dragend` listener never fires. A window-level listener guarantees we
+  // always clear the source id after the operating system finishes the drag.
+  window.addEventListener("dragend", () => {
+    dragSourceId = null;
+  });
 
   const render = (): void => {
     host.innerHTML = "";
@@ -73,7 +103,12 @@ function renderItem(
   // Type icon
   const icon = document.createElement("span");
   icon.className = "layer-icon";
-  icon.textContent = el.type === "text" ? "T" : el.type === "image" ? "🖼" : "▭";
+  icon.innerHTML =
+    el.type === "text"
+      ? ICONS.text
+      : el.type === "image"
+        ? ICONS.image
+        : ICONS.rect;
   item.appendChild(icon);
 
   // Name (preview text for text elements)
@@ -83,31 +118,42 @@ function renderItem(
   item.appendChild(name);
 
   // Visibility toggle
-  const vis = document.createElement("button");
-  vis.className = "layer-icon-btn";
-  vis.title = el.hidden ? "Show" : "Hide";
-  vis.textContent = el.hidden ? "○" : "●";
-  vis.addEventListener("click", (e) => {
-    e.stopPropagation();
-    store.updateElement(el.id, { hidden: !el.hidden });
-    requestRender();
-  });
+  const vis = iconBtn(
+    el.hidden ? ICONS.eyeOff : ICONS.eye,
+    el.hidden ? "Show layer" : "Hide layer",
+    () => {
+      store.transact(() => {
+        // Use transact so visibility changes can be undone, and so the panel
+        // / canvas stay in sync via emit().
+        const target = store.currentPage?.elements.find((e) => e.id === el.id);
+        if (target) target.hidden = !target.hidden;
+      });
+      requestRender();
+    },
+  );
+  if (el.hidden) vis.classList.add("active");
   item.appendChild(vis);
 
   // Lock toggle
-  const lock = document.createElement("button");
-  lock.className = "layer-icon-btn";
-  lock.title = el.locked ? "Unlock" : "Lock";
-  lock.textContent = el.locked ? "🔒" : "🔓";
-  lock.addEventListener("click", (e) => {
-    e.stopPropagation();
-    store.updateElement(el.id, { locked: !el.locked });
-    requestRender();
-  });
+  const lock = iconBtn(
+    el.locked ? ICONS.lock : ICONS.unlock,
+    el.locked ? "Unlock layer" : "Lock layer",
+    () => {
+      store.transact(() => {
+        const target = store.currentPage?.elements.find((e) => e.id === el.id);
+        if (target) target.locked = !target.locked;
+      });
+      requestRender();
+    },
+  );
+  if (el.locked) lock.classList.add("active");
   item.appendChild(lock);
 
-  // Click selects
+  // Click selects (ignore clicks that bubbled from the icon buttons — those
+  // call e.stopPropagation already, but be defensive).
   item.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    if (t.closest(".layer-icon-btn")) return;
     if (e.shiftKey) {
       const next = new Set(store.selectedIds);
       if (next.has(el.id)) next.delete(el.id);
@@ -131,7 +177,8 @@ function renderItem(
     setDragSource(null);
   });
   item.addEventListener("dragover", (e) => {
-    if (!getDragSource() || getDragSource() === el.id) return;
+    const src = getDragSource();
+    if (!src || src === el.id) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     const r = item.getBoundingClientRect();
@@ -150,10 +197,32 @@ function renderItem(
     const r = item.getBoundingClientRect();
     const before = e.clientY < r.top + r.height / 2;
     moveElementRelative(sourceId, el.id, before);
+    setDragSource(null);
     requestRender();
   });
   void renderer;
   return item;
+}
+
+function iconBtn(
+  svg: string,
+  title: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "layer-icon-btn";
+  b.type = "button";
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = svg;
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onClick();
+  });
+  // Don't trigger drag when starting from an icon button.
+  b.addEventListener("mousedown", (e) => e.stopPropagation());
+  return b;
 }
 
 function layerLabel(el: AnyElement): string {

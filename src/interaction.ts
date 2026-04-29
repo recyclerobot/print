@@ -1,6 +1,7 @@
 import { store } from "./store";
 import type { Renderer } from "./webgl/renderer";
 import type { AnyElement } from "./types";
+import type { InlineEditor } from "./inlineTextEdit";
 
 interface DragState {
   mode: "move" | "resize" | "pan" | "marquee" | null;
@@ -18,6 +19,7 @@ export function attachInteraction(
   canvas: HTMLCanvasElement,
   renderer: Renderer,
   requestRender: () => void,
+  inlineEditor?: InlineEditor,
 ): void {
   const drag: DragState = {
     mode: null,
@@ -74,6 +76,11 @@ export function attachInteraction(
   canvas.addEventListener("mousedown", (e) => {
     e.preventDefault();
     canvas.focus();
+    // If a text element is being edited inline, commit/cancel and let the
+    // next gesture start fresh.
+    if (inlineEditor?.isEditing()) {
+      inlineEditor.endEdit(true);
+    }
     const mm = renderer.screenToMm(e.clientX, e.clientY);
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
       drag.mode = "pan";
@@ -246,6 +253,18 @@ export function attachInteraction(
       drag.initial.clear();
       snapLines = [];
       requestRender();
+    }
+  });
+
+  // Double-click on a text element starts inline editing. Other element types
+  // currently don't have a meaningful inline edit so the gesture is ignored.
+  canvas.addEventListener("dblclick", (e) => {
+    if (!inlineEditor) return;
+    const mm = renderer.screenToMm(e.clientX, e.clientY);
+    const hit = hitTest(mm.x, mm.y);
+    if (hit.el && hit.el.type === "text" && !hit.el.locked) {
+      e.preventDefault();
+      inlineEditor.beginEdit(hit.el.id);
     }
   });
 
