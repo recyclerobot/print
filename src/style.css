@@ -175,6 +175,65 @@ body.no-rulers .ruler, body.no-rulers .ruler-corner { display: none; }
 .menu-item:hover { background: var(--panel-2); }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
 
+/* Toggle row inside a popover menu */
+.menu-toggle {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
+}
+.menu-toggle .menu-check {
+  color: var(--accent);
+  font-weight: 700;
+  visibility: hidden;
+  text-align: center;
+}
+.menu-toggle.on .menu-check { visibility: visible; }
+.menu-toggle .menu-toggle-label { font-size: 12px; }
+.menu-toggle .menu-hint {
+  grid-column: 2 / 3;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* Preview-mode banner */
+.preview-banner {
+  position: fixed; left: 50%; bottom: 36px; transform: translateX(-50%);
+  z-index: 50;
+  display: inline-flex; align-items: center; gap: 14px;
+  background: rgba(20, 20, 24, 0.92);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+  backdrop-filter: blur(6px);
+}
+.preview-banner kbd {
+  font: inherit;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 5px;
+  font-size: 10.5px;
+}
+
+/* While previewing, dim the editor chrome and disable selection visuals */
+body.preview-mode .left-panel,
+body.preview-mode .right-panel,
+body.preview-mode .right-bottom,
+body.preview-mode .tools-rail,
+body.preview-mode .ruler,
+body.preview-mode .ruler-corner {
+  opacity: 0.35;
+  pointer-events: none;
+  filter: saturate(0.6);
+}
+body.preview-mode .canvas-host { background: #2a2a30; }
+
 .menu-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
   padding: 6px 4px;

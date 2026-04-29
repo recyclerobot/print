@@ -296,6 +296,115 @@ export function buildToolbar(
   });
   host.appendChild(docMenu.el);
 
+  // --- View menu (preview mode + togglable overlays) ------------------------
+  const viewMenu = createMenu({
+    label: "View",
+    title: "View options & preview",
+    icon: "▾",
+    build: (panel, close) => {
+      panel.appendChild(
+        menuToggle(
+          "Preview (export view)",
+          renderer.previewMode,
+          "Hide guides & clip to the trim box, exactly as the PDF would export.",
+          (v) => {
+            setPreviewMode(v);
+            close();
+          },
+        ),
+      );
+      panel.appendChild(divider());
+      panel.appendChild(
+        menuToggle("Rulers", store.prefs.showRulers, "", (v) => {
+          store.prefs.showRulers = v;
+          store.save();
+          document.body.classList.toggle("no-rulers", !v);
+          syncToggleButton("rulers", v);
+          requestRender();
+        }),
+      );
+      panel.appendChild(
+        menuToggle("Margins", store.prefs.showMargins, "", (v) => {
+          store.prefs.showMargins = v;
+          renderer.showMargins = v;
+          store.save();
+          syncToggleButton("margins", v);
+          requestRender();
+        }),
+      );
+      panel.appendChild(
+        menuToggle("Bleed", store.prefs.showBleed, "", (v) => {
+          store.prefs.showBleed = v;
+          renderer.showBleed = v;
+          store.save();
+          syncToggleButton("bleed", v);
+          requestRender();
+        }),
+      );
+      panel.appendChild(
+        menuToggle("Grid", store.prefs.showGrid, "", (v) => {
+          store.prefs.showGrid = v;
+          renderer.showGrid = v;
+          store.save();
+          syncToggleButton("grid", v);
+          requestRender();
+        }),
+      );
+      panel.appendChild(
+        menuToggle("Snap to grid", store.prefs.snapEnabled, "", (v) => {
+          store.prefs.snapEnabled = v;
+          store.save();
+          syncToggleButton("snap", v);
+        }),
+      );
+      panel.appendChild(divider());
+      panel.appendChild(
+        menuItem("Fit page to screen", () => {
+          renderer.fitToScreen();
+          requestRender();
+          close();
+        }),
+      );
+      panel.appendChild(
+        menuItem("Actual size (100%)", () => {
+          renderer.view.zoom = 96 / 25.4;
+          requestRender();
+          close();
+        }),
+      );
+    },
+  });
+  host.appendChild(viewMenu.el);
+
+  // Track named toggle buttons in the icon cluster so the View menu can keep
+  // them visually in sync.
+  const toggleButtons = new Map<string, HTMLButtonElement>();
+  function syncToggleButton(name: string, on: boolean): void {
+    const b = toggleButtons.get(name);
+    if (b) b.classList.toggle("on", on);
+  }
+
+  // Preview mode escape: any click inside the canvas-host's "exit preview"
+  // chrome triggers this. We also expose it on the renderer + ESC key for
+  // good measure.
+  function setPreviewMode(on: boolean): void {
+    renderer.previewMode = on;
+    document.body.classList.toggle("preview-mode", on);
+    // While previewing, hide rulers chrome regardless of the saved pref so
+    // the page is unobscured.
+    document.body.classList.toggle("no-rulers", on || !store.prefs.showRulers);
+    ensurePreviewBanner(on, () => setPreviewMode(false));
+    requestRender();
+  }
+
+  // ESC exits preview.
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && renderer.previewMode) {
+      e.preventDefault();
+      setPreviewMode(false);
+    }
+  });
+
   // --- Spacer pushes view controls to the right -----------------------------
   const spacer = document.createElement("div");
   spacer.className = "tb-spacer";
@@ -328,44 +437,69 @@ export function buildToolbar(
   // --- View toggles (compact icon buttons with tooltips) --------------------
   const view = document.createElement("div");
   view.className = "tb-cluster";
-  view.appendChild(
-    toggleIconBtn(ICONS.ruler, "Rulers", store.prefs.showRulers, (v) => {
+  const rulersBtn = toggleIconBtn(
+    ICONS.ruler,
+    "Rulers",
+    store.prefs.showRulers,
+    (v) => {
       store.prefs.showRulers = v;
       store.save();
       document.body.classList.toggle("no-rulers", !v);
       requestRender();
-    }),
+    },
   );
-  view.appendChild(
-    toggleIconBtn(ICONS.margins, "Margins", store.prefs.showMargins, (v) => {
+  toggleButtons.set("rulers", rulersBtn);
+  view.appendChild(rulersBtn);
+  const marginsBtn = toggleIconBtn(
+    ICONS.margins,
+    "Margins",
+    store.prefs.showMargins,
+    (v) => {
       store.prefs.showMargins = v;
       renderer.showMargins = v;
       store.save();
       requestRender();
-    }),
+    },
   );
-  view.appendChild(
-    toggleIconBtn(ICONS.bleed, "Bleed", store.prefs.showBleed, (v) => {
+  toggleButtons.set("margins", marginsBtn);
+  view.appendChild(marginsBtn);
+  const bleedBtn = toggleIconBtn(
+    ICONS.bleed,
+    "Bleed",
+    store.prefs.showBleed,
+    (v) => {
       store.prefs.showBleed = v;
       renderer.showBleed = v;
       store.save();
       requestRender();
-    }),
+    },
   );
-  view.appendChild(
-    toggleIconBtn(ICONS.grid, "Grid", store.prefs.showGrid, (v) => {
+  toggleButtons.set("bleed", bleedBtn);
+  view.appendChild(bleedBtn);
+  const gridBtn = toggleIconBtn(
+    ICONS.grid,
+    "Grid",
+    store.prefs.showGrid,
+    (v) => {
       store.prefs.showGrid = v;
       renderer.showGrid = v;
       store.save();
       requestRender();
-    }),
+    },
   );
-  view.appendChild(
-    toggleIconBtn(ICONS.snap, "Snap to grid", store.prefs.snapEnabled, (v) => {
+  toggleButtons.set("grid", gridBtn);
+  view.appendChild(gridBtn);
+  const snapBtn = toggleIconBtn(
+    ICONS.snap,
+    "Snap to grid",
+    store.prefs.snapEnabled,
+    (v) => {
       store.prefs.snapEnabled = v;
       store.save();
-    }),
+    },
   );
+  toggleButtons.set("snap", snapBtn);
+  view.appendChild(snapBtn);
   host.appendChild(view);
 
   // --- Export PDF as primary CTA -------------------------------------------
@@ -486,6 +620,66 @@ function menuItem(label: string, onClick: () => void): HTMLButtonElement {
   b.textContent = label;
   b.addEventListener("click", onClick);
   return b;
+}
+
+// Toggle row in a popover menu — renders as a checkable item with a check
+// glyph on the left when active, plus optional helper text below.
+function menuToggle(
+  label: string,
+  initial: boolean,
+  hint: string,
+  onChange: (v: boolean) => void,
+): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "menu-item menu-toggle";
+  b.type = "button";
+  b.classList.toggle("on", initial);
+  b.setAttribute("role", "menuitemcheckbox");
+  b.setAttribute("aria-checked", String(initial));
+  const check = document.createElement("span");
+  check.className = "menu-check";
+  check.textContent = "✓";
+  const text = document.createElement("span");
+  text.className = "menu-toggle-label";
+  text.textContent = label;
+  b.appendChild(check);
+  b.appendChild(text);
+  if (hint) {
+    const h = document.createElement("span");
+    h.className = "menu-hint";
+    h.textContent = hint;
+    b.appendChild(h);
+  }
+  b.addEventListener("click", () => {
+    const next = !b.classList.contains("on");
+    b.classList.toggle("on", next);
+    b.setAttribute("aria-checked", String(next));
+    onChange(next);
+  });
+  return b;
+}
+
+// Persistent on-canvas banner shown while preview mode is active. Includes
+// an "Exit preview" button so users can always get back to editing.
+function ensurePreviewBanner(show: boolean, onExit: () => void): void {
+  const id = "preview-banner";
+  let banner = document.getElementById(id);
+  if (!show) {
+    banner?.remove();
+    return;
+  }
+  if (banner) return;
+  banner = document.createElement("div");
+  banner.id = id;
+  banner.className = "preview-banner";
+  banner.innerHTML = `<span>Preview — showing what will be exported. Press <kbd>Esc</kbd> to exit.</span>`;
+  const exit = document.createElement("button");
+  exit.type = "button";
+  exit.className = "btn small";
+  exit.textContent = "Exit preview";
+  exit.addEventListener("click", onExit);
+  banner.appendChild(exit);
+  document.body.appendChild(banner);
 }
 
 function divider(): HTMLDivElement {

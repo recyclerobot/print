@@ -67,6 +67,10 @@ export class Renderer {
   showRulers = true;
   showMargins = true;
   showBleed = true;
+  // When true, the renderer paints only what would actually export: the page
+  // (trim) background and elements clipped to the page rect. All overlays
+  // (bleed area, grid, margins, selection handles) are suppressed.
+  previewMode = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -221,6 +225,11 @@ export class Renderer {
     const view = this.viewMatrix();
     const flipY = -1; // canvas y is down, clip y is up
 
+    if (this.previewMode) {
+      this.renderPreview(page, view, flipY);
+      return;
+    }
+
     // 1) Bleed area
     if (this.showBleed) {
       const bleed = this.doc.bleed;
@@ -299,6 +308,50 @@ export class Renderer {
       if (!el) continue;
       this.drawSelection(el, view, flipY);
     }
+  }
+
+  // Preview render: just the page background and elements clipped to the
+  // trim box. Uses GL scissor so any element overflowing the page is cut at
+  // exactly the same line as the eventual export.
+  private renderPreview(
+    page: import("../types").Page,
+    view: Float32Array,
+    flipY: number,
+  ): void {
+    const gl = this.gl;
+    // Compute the trim rect in canvas pixels and enable scissor to that.
+    const tl = this.mmToScreen(0, 0);
+    const br = this.mmToScreen(this.doc.size.width, this.doc.size.height);
+    const dpr = window.devicePixelRatio || 1;
+    const x = Math.floor(tl.x * dpr);
+    // GL scissor origin is bottom-left; convert top-down screen y.
+    const yTop = Math.floor(tl.y * dpr);
+    const yBot = Math.ceil(br.y * dpr);
+    const wPx = Math.max(0, Math.ceil(br.x * dpr) - x);
+    const hPx = Math.max(0, yBot - yTop);
+    const glY = this.canvas.height - yTop - hPx;
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(x, glY, wPx, hPx);
+
+    // Page background.
+    this.drawSolid(
+      view,
+      flipY,
+      0,
+      0,
+      this.doc.size.width,
+      this.doc.size.height,
+      hexToRgba(page.background, 1),
+    );
+
+    // Elements (no margins, grid, bleed, selection).
+    const pxPerMm = this.view.zoom * dpr;
+    for (const el of page.elements) {
+      if (el.hidden) continue;
+      this.drawElement(el, view, flipY, pxPerMm);
+    }
+
+    gl.disable(gl.SCISSOR_TEST);
   }
 
   private drawElement(
