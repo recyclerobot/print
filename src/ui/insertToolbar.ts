@@ -51,7 +51,8 @@ export function buildInsertToolbar(
       );
       requestRender();
     } catch (e) {
-      alert("Image import failed: " + (e as Error).message);
+      const msg = (e as Error).message || String(e);
+      alert(msg);
     }
   });
   host.appendChild(fileInput);

@@ -30,6 +30,20 @@ function projectKey(id: string): string {
   return `${PROJECT_PREFIX}${id}.v1`;
 }
 
+// Detect localStorage quota exhaustion across browsers. Chrome throws a
+// DOMException named "QuotaExceededError" (code 22), Firefox uses
+// "NS_ERROR_DOM_QUOTA_REACHED" (code 1014), Safari may throw a generic
+// QUOTA_EXCEEDED_ERR.
+function isQuotaError(e: unknown): boolean {
+  if (!(e instanceof DOMException)) return false;
+  return (
+    e.code === 22 ||
+    e.code === 1014 ||
+    e.name === "QuotaExceededError" ||
+    e.name === "NS_ERROR_DOM_QUOTA_REACHED"
+  );
+}
+
 export interface Prefs {
   unit: "mm" | "cm" | "in" | "pt";
   showRulers: boolean;
@@ -263,8 +277,38 @@ class Store {
 
   save(): void {
     this.doc.updatedAt = Date.now();
-    localStorage.setItem(projectKey(this.doc.id), JSON.stringify(this.doc));
-    localStorage.setItem(PREFS_KEY, JSON.stringify(this.prefs));
+    const key = projectKey(this.doc.id);
+    const payload = JSON.stringify(this.doc);
+    try {
+      localStorage.setItem(key, payload);
+    } catch (e) {
+      if (isQuotaError(e)) {
+        // Free space by dropping undo/redo snapshots (each can be as large
+        // as the document itself) and try again.
+        this.undoStack.length = 0;
+        this.redoStack.length = 0;
+        try {
+          localStorage.setItem(key, payload);
+        } catch (e2) {
+          if (isQuotaError(e2)) {
+            const err = new Error(
+              "Local storage is full. Remove some images, large content, or " +
+                "delete other projects before adding more.",
+            ) as Error & { code: "QUOTA_EXCEEDED" };
+            err.code = "QUOTA_EXCEEDED";
+            throw err;
+          }
+          throw e2;
+        }
+      } else {
+        throw e;
+      }
+    }
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(this.prefs));
+    } catch {
+      /* prefs are non-critical */
+    }
     // Sync index metadata for this project.
     const meta = this.projectsIndex.projects.find((p) => p.id === this.doc.id);
     if (meta) {
@@ -432,9 +476,17 @@ class Store {
   addElement(el: AnyElement): void {
     const page = this.currentPage;
     if (!page) return;
-    this.transact(() => {
-      page.elements.push(el);
-    });
+    try {
+      this.transact(() => {
+        page.elements.push(el);
+      });
+    } catch (e) {
+      // Rollback the in-memory mutation if persisting failed (e.g. quota).
+      const idx = page.elements.findIndex((x) => x.id === el.id);
+      if (idx >= 0) page.elements.splice(idx, 1);
+      this.emit();
+      throw e;
+    }
     this.selectedIds = new Set([el.id]);
     this.emit();
   }
