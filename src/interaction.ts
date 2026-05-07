@@ -217,8 +217,8 @@ export function attachInteraction(
         ny = my;
         nh = Math.max(2, init.y + init.h - my);
       }
-      // Aspect ratio with shift
-      if (e.shiftKey && init.w && init.h) {
+      // Aspect ratio with shift or element lock
+      if ((e.shiftKey || el.aspectRatioLocked) && init.w && init.h) {
         const aspect = init.w / init.h;
         if (nw / nh > aspect) nw = nh * aspect;
         else nh = nw / aspect;

@@ -9,6 +9,8 @@ import type { Renderer } from "../webgl/renderer";
 const SVG = (path: string): string =>
   `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 const ICONS = {
+  undo: SVG(`<path d="M4 7h7a3 3 0 0 1 0 6H9"/><path d="M7 4L4 7l3 3"/>`),
+  redo: SVG(`<path d="M12 7H5a3 3 0 0 0 0 6h2"/><path d="M9 4l3 3-3 3"/>`),
   ruler: SVG(
     `<path d="M2 11l9-9 3 3-9 9z"/><path d="M4.5 8.5l1 1M6.5 6.5l1.5 1.5M8.5 4.5l1 1"/>`,
   ),
@@ -417,6 +419,33 @@ export function buildToolbar(
   savedIndicator.innerHTML = `<span class="tb-saved-dot"></span><span class="tb-saved-text">Saved</span>`;
   host.appendChild(savedIndicator);
 
+  // --- Undo / Redo ----------------------------------------------------------
+  const undoRedo = document.createElement("div");
+  undoRedo.className = "tb-cluster";
+  const undoBtn = document.createElement("button");
+  undoBtn.className = "tb-iconbtn with-icon";
+  undoBtn.type = "button";
+  undoBtn.title = "Undo (⌘Z)";
+  undoBtn.innerHTML = ICONS.undo;
+  undoBtn.addEventListener("click", () => {
+    store.undo();
+    renderer.invalidate();
+    requestRender();
+  });
+  undoRedo.appendChild(undoBtn);
+  const redoBtn = document.createElement("button");
+  redoBtn.className = "tb-iconbtn with-icon";
+  redoBtn.type = "button";
+  redoBtn.title = "Redo (⌘⇧Z)";
+  redoBtn.innerHTML = ICONS.redo;
+  redoBtn.addEventListener("click", () => {
+    store.redo();
+    renderer.invalidate();
+    requestRender();
+  });
+  undoRedo.appendChild(redoBtn);
+  host.appendChild(undoRedo);
+
   // --- Zoom group -----------------------------------------------------------
   const zoom = document.createElement("div");
   zoom.className = "tb-cluster";
@@ -515,6 +544,8 @@ export function buildToolbar(
   let savedTimer: number | null = null;
   const refresh = (): void => {
     projectMenu.refreshLabel();
+    undoBtn.disabled = !store.canUndo;
+    redoBtn.disabled = !store.canRedo;
     const txt = savedIndicator.querySelector(".tb-saved-text") as HTMLElement;
     savedIndicator.classList.add("dirty");
     txt.textContent = "Saving…";

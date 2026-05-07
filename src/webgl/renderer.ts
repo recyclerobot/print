@@ -532,7 +532,7 @@ function signature(el: AnyElement): string {
     return `${base}|${el.fill}|${el.stroke}|${el.strokeWidth}|${el.cornerRadius}`;
   }
   if (el.type === "image") {
-    return `${base}|${(el.assetId ?? el.src).length}|${el.fit}`;
+    return `${base}|${(el.assetId ?? el.src).length}|${el.fit}|${el.repeatX ?? 1}x${el.repeatY ?? 1}g${el.repeatGap ?? 0}`;
   }
   return base;
 }

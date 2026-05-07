@@ -131,6 +131,7 @@ export function newImageElement(
     rotation: 0,
     opacity: 1,
     fit: "contain",
+    aspectRatioLocked: true,
     ...partial,
   };
 }
@@ -182,6 +183,12 @@ class Store {
   private listeners: Set<Listener> = new Set();
   private undoStack: string[] = [];
   private redoStack: string[] = [];
+  get canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
   private suspendHistory = false;
   private projectsIndex: ProjectsIndex;
 
@@ -349,11 +356,19 @@ class Store {
   }
 
   // History
+  private lastHistoryTime = 0;
   pushHistory(): void {
     if (this.suspendHistory) return;
     this.undoStack.push(JSON.stringify(this.doc));
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack.length = 0;
+    this.lastHistoryTime = Date.now();
+  }
+  /** Push history only if enough time elapsed since the last push. */
+  private pushHistoryThrottled(ms = 300): void {
+    if (this.suspendHistory) return;
+    if (Date.now() - this.lastHistoryTime < ms) return;
+    this.pushHistory();
   }
   undo(): void {
     if (!this.undoStack.length) return;
@@ -505,6 +520,7 @@ class Store {
     if (!page) return;
     const el = page.elements.find((e) => e.id === id);
     if (!el) return;
+    this.pushHistoryThrottled();
     Object.assign(el, patch);
     this.emit();
   }

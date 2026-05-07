@@ -8,6 +8,16 @@ import type {
 } from "../types";
 import { formatUnit, fromUnit, toUnit } from "../units";
 
+// Chain-link SVG icons for the aspect-ratio lock toggle (16×16, stroke-based).
+const AR_SVG = (d: string) =>
+  `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const AR_ICON_LOCKED = AR_SVG(
+  `<path d="M6 4v2a2 2 0 0 0 4 0V4"/><path d="M6 12v-2a2 2 0 0 1 4 0v2"/>`,
+);
+const AR_ICON_UNLOCKED = AR_SVG(
+  `<path d="M5 4v2.5M11 4v2.5"/><path d="M5 12v-2.5M11 12v-2.5"/>`,
+);
+
 export function buildPropertiesPanel(
   host: HTMLElement,
   renderer: Renderer,
@@ -79,8 +89,6 @@ export function buildPropertiesPanel(
     if (el.type === "text") textSection(host, el, requestRender);
     if (el.type === "rect") rectSection(host, el, requestRender);
     if (el.type === "image") imageSection(host, el, requestRender);
-    if (el.type === "image" && (el as ImageElement).gridGroup)
-      gridSection(host, el as ImageElement, requestRender);
     layerSection(host, el, requestRender, renderer);
   };
   store.subscribe(render);
@@ -212,24 +220,52 @@ function transformSection(
       }),
     ),
   );
+
+  // --- W / H with aspect-ratio lock ----------------------------------------
+  const ratio = el.width / el.height;
+  const arLocked = el.aspectRatioLocked ?? false;
   grid.appendChild(
     field(
       "W",
       unitInput(el.width, u, (mm) => {
-        store.updateElement(el.id, { width: Math.max(1, mm) });
+        const w = Math.max(1, mm);
+        const patch: Partial<AnyElement> = { width: w };
+        if (el.aspectRatioLocked) patch.height = Math.max(1, w / ratio);
+        store.updateElement(el.id, patch);
         requestRender();
       }),
     ),
   );
+
+  // Chain-link toggle button between W and H (Figma / Photoshop pattern).
+  const lockBtn = document.createElement("button");
+  lockBtn.type = "button";
+  lockBtn.className = "ar-lock" + (arLocked ? " on" : "");
+  lockBtn.title = arLocked
+    ? "Aspect ratio locked – click to unlock"
+    : "Aspect ratio unlocked – click to lock";
+  lockBtn.innerHTML = arLocked ? AR_ICON_LOCKED : AR_ICON_UNLOCKED;
+  lockBtn.addEventListener("click", () => {
+    store.updateElement(el.id, {
+      aspectRatioLocked: !el.aspectRatioLocked,
+    });
+    requestRender();
+  });
+  grid.appendChild(lockBtn);
+
   grid.appendChild(
     field(
       "H",
       unitInput(el.height, u, (mm) => {
-        store.updateElement(el.id, { height: Math.max(1, mm) });
+        const h = Math.max(1, mm);
+        const patch: Partial<AnyElement> = { height: h };
+        if (el.aspectRatioLocked) patch.width = Math.max(1, h * ratio);
+        store.updateElement(el.id, patch);
         requestRender();
       }),
     ),
   );
+
   grid.appendChild(
     field(
       "Rotation°",
@@ -458,127 +494,40 @@ function imageSection(
     dpiEl.title = `${label} (${Math.round(dpiW)} × ${Math.round(dpiH)} DPI)`;
     grid.appendChild(field("Print DPI", dpiEl));
   }
-  host.appendChild(grid);
-}
 
-function gridSection(
-  host: HTMLElement,
-  el: ImageElement,
-  requestRender: () => void,
-): void {
-  const groupId = el.gridGroup;
-  if (!groupId) return;
-  const page = store.currentPage;
-  if (!page) return;
-
-  const members = page.elements.filter(
-    (e) => e.type === "image" && (e as ImageElement).gridGroup === groupId,
-  ) as ImageElement[];
-  if (members.length < 2) return;
-
-  // Reverse-engineer current grid layout from member positions.
-  const xs = [...new Set(members.map((m) => Math.round(m.x * 1000)))].sort(
-    (a, b) => a - b,
-  );
-  const ys = [...new Set(members.map((m) => Math.round(m.y * 1000)))].sort(
-    (a, b) => a - b,
-  );
-  const currentCols = xs.length;
-  const currentRows = ys.length;
-  const currentFit = members[0].fit;
-  let currentGap = 0;
-  if (currentCols > 1) {
-    const cellW = members[0].width;
-    currentGap = (xs[1] - xs[0]) / 1000 - cellW;
-    if (currentGap < 0) currentGap = 0;
-  } else if (currentRows > 1) {
-    const cellH = members[0].height;
-    currentGap = (ys[1] - ys[0]) / 1000 - cellH;
-    if (currentGap < 0) currentGap = 0;
-  }
-
-  sectionTitle(host, "Grid");
-  const grid = document.createElement("div");
-  grid.className = "grid2";
-
-  const relayout = (
-    cols: number,
-    rows: number,
-    gap: number,
-    fit: ImageElement["fit"],
-  ) => {
-    const total = rows * cols;
-    const availW = store.doc.size.width - gap * Math.max(0, cols - 1);
-    const availH = store.doc.size.height - gap * Math.max(0, rows - 1);
-    if (availW <= 0 || availH <= 0) return;
-    const cellW = availW / cols;
-    const cellH = availH / rows;
-
-    store.transact(() => {
-      // Remove excess members or add clones if needed.
-      while (members.length > total) {
-        const removed = members.pop()!;
-        const idx = page.elements.indexOf(removed);
-        if (idx >= 0) page.elements.splice(idx, 1);
-      }
-      while (members.length < total) {
-        const template = members[0];
-        const clone: ImageElement = {
-          ...JSON.parse(JSON.stringify(template)),
-          id: crypto.randomUUID(),
-        };
-        members.push(clone);
-        page.elements.push(clone);
-      }
-      // Reposition all members.
-      for (let i = 0; i < total; i++) {
-        const m = members[i];
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        m.x = col * (cellW + gap);
-        m.y = row * (cellH + gap);
-        m.width = cellW;
-        m.height = cellH;
-        m.fit = fit;
-      }
-    });
-    requestRender();
-  };
-
-  grid.appendChild(
+  // --- Repeat controls ---
+  sectionTitle(host, "Repeat");
+  const rGrid = document.createElement("div");
+  rGrid.className = "grid2";
+  rGrid.appendChild(
     field(
-      "Columns",
-      numberInput(currentCols, 1, 50, 1, (v) => {
-        const c = Math.max(1, Math.round(v));
-        const r = Math.max(1, Math.ceil(members.length / c));
-        relayout(c, r, currentGap, currentFit);
+      "Horizontal",
+      numberInput(el.repeatX ?? 1, 1, 50, 1, (v) => {
+        store.updateElement(el.id, { repeatX: Math.max(1, Math.round(v)) });
+        requestRender();
       }),
     ),
   );
-  grid.appendChild(
+  rGrid.appendChild(
     field(
-      "Rows",
-      numberInput(currentRows, 1, 50, 1, (v) => {
-        const r = Math.max(1, Math.round(v));
-        const c = Math.max(1, Math.ceil(members.length / r));
-        relayout(c, r, currentGap, currentFit);
+      "Vertical",
+      numberInput(el.repeatY ?? 1, 1, 50, 1, (v) => {
+        store.updateElement(el.id, { repeatY: Math.max(1, Math.round(v)) });
+        requestRender();
       }),
     ),
   );
-  const u = store.prefs.unit;
-  grid.appendChild(
+  const u2 = store.prefs.unit;
+  rGrid.appendChild(
     field(
       "Gap",
-      unitInput(currentGap, u, (mm) => {
-        relayout(currentCols, currentRows, Math.max(0, mm), currentFit);
+      unitInput(el.repeatGap ?? 0, u2, (mm) => {
+        store.updateElement(el.id, { repeatGap: Math.max(0, mm) });
+        requestRender();
       }),
     ),
   );
-  const fitSel = select(["contain", "cover", "fill"], (v) => {
-    relayout(currentCols, currentRows, currentGap, v as ImageElement["fit"]);
-  });
-  fitSel.value = currentFit;
-  grid.appendChild(field("Fit", fitSel));
+  host.appendChild(rGrid);
 
   host.appendChild(grid);
 }

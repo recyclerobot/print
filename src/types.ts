@@ -34,6 +34,7 @@ export interface BaseElement {
   opacity: number; // 0..1
   locked?: boolean;
   hidden?: boolean;
+  aspectRatioLocked?: boolean;
 }
 
 export interface TextElement extends BaseElement {
@@ -58,8 +59,12 @@ export interface ImageElement extends BaseElement {
   naturalHeight?: number;
   /** Points into PrintDocument.assets — avoids duplicating large data URLs. */
   assetId?: string;
-  /** Elements sharing the same gridGroup form a page-filling image grid. */
-  gridGroup?: string;
+  /** Number of horizontal repetitions (default 1). */
+  repeatX?: number;
+  /** Number of vertical repetitions (default 1). */
+  repeatY?: number;
+  /** Gap between repeated cells in mm (default 0). */
+  repeatGap?: number;
 }
 
 export interface RectElement extends BaseElement {

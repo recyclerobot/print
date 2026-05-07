@@ -347,31 +347,43 @@ async function drawImageExport(
   const iw = img.naturalWidth,
     ih = img.naturalHeight;
   if (!iw || !ih) return;
-  let dx = x,
-    dy = y,
-    dw = w,
-    dh = h;
-  if (el.fit === "contain") {
-    const s = Math.min(w / iw, h / ih);
-    dw = iw * s;
-    dh = ih * s;
-    dx = x + (w - dw) / 2;
-    dy = y + (h - dh) / 2;
-  } else if (el.fit === "cover") {
-    const s = Math.max(w / iw, h / ih);
-    dw = iw * s;
-    dh = ih * s;
-    dx = x + (w - dw) / 2;
-    dy = y + (h - dh) / 2;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, w, h);
-    ctx.clip();
-    ctx.drawImage(img, dx, dy, dw, dh);
-    ctx.restore();
-    return;
+
+  const rx = el.repeatX ?? 1;
+  const ry = el.repeatY ?? 1;
+  const gapPx = (el.repeatGap ?? 0) * pxPerMm;
+  const cellW = (w - gapPx * (rx - 1)) / rx;
+  const cellH = (h - gapPx * (ry - 1)) / ry;
+  if (cellW <= 0 || cellH <= 0) return;
+
+  for (let row = 0; row < ry; row++) {
+    for (let col = 0; col < rx; col++) {
+      const cx = x + col * (cellW + gapPx);
+      const cy = y + row * (cellH + gapPx);
+      let dx = cx,
+        dy = cy,
+        dw = cellW,
+        dh = cellH;
+      if (el.fit === "contain") {
+        const s = Math.min(cellW / iw, cellH / ih);
+        dw = iw * s;
+        dh = ih * s;
+        dx = cx + (cellW - dw) / 2;
+        dy = cy + (cellH - dh) / 2;
+      } else if (el.fit === "cover") {
+        const s = Math.max(cellW / iw, cellH / ih);
+        dw = iw * s;
+        dh = ih * s;
+        dx = cx + (cellW - dw) / 2;
+        dy = cy + (cellH - dh) / 2;
+      }
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(cx, cy, cellW, cellH);
+      ctx.clip();
+      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.restore();
+    }
   }
-  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
 function drawCropMarks(
