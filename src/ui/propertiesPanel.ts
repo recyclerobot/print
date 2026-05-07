@@ -501,7 +501,12 @@ function gridSection(
   const grid = document.createElement("div");
   grid.className = "grid2";
 
-  const relayout = (cols: number, rows: number, gap: number, fit: ImageElement["fit"]) => {
+  const relayout = (
+    cols: number,
+    rows: number,
+    gap: number,
+    fit: ImageElement["fit"],
+  ) => {
     const total = rows * cols;
     const availW = store.doc.size.width - gap * Math.max(0, cols - 1);
     const availH = store.doc.size.height - gap * Math.max(0, rows - 1);

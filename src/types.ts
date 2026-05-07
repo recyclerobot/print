@@ -105,10 +105,7 @@ export interface PrintDocument {
 /** Resolve the actual data-URL for an image element. If assetId is set and
  *  exists in the document asset pool, return that; otherwise fall back to
  *  the inline `src` field. */
-export function resolveImageSrc(
-  el: ImageElement,
-  doc: PrintDocument,
-): string {
+export function resolveImageSrc(el: ImageElement, doc: PrintDocument): string {
   if (el.assetId && doc.assets?.[el.assetId]) return doc.assets[el.assetId];
   return el.src;
 }
