@@ -95,7 +95,9 @@ export function buildInsertToolbar(
     const cellH = availH / rows;
 
     try {
-      const prepared = await Promise.all(files.map((f) => prepareImportedImage(f)));
+      const prepared = await Promise.all(
+        files.map((f) => prepareImportedImage(f)),
+      );
       const created: ImageElement[] = [];
       const total = rows * cols;
       for (let i = 0; i < total; i++) {
@@ -129,9 +131,7 @@ export function buildInsertToolbar(
     }
   });
   host.appendChild(gridInput);
-  host.appendChild(
-    railButton("▦", "Add image grid", () => gridInput.click()),
-  );
+  host.appendChild(railButton("▦", "Add image grid", () => gridInput.click()));
 }
 
 function askPositiveInt(promptText: string, initial: number): number | null {
@@ -145,7 +145,10 @@ function askPositiveInt(promptText: string, initial: number): number | null {
   return n;
 }
 
-function askNonNegativeNumber(promptText: string, initial: number): number | null {
+function askNonNegativeNumber(
+  promptText: string,
+  initial: number,
+): number | null {
   const raw = prompt(promptText, String(initial));
   if (raw == null) return null;
   const n = Number(raw);
