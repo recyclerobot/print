@@ -29,6 +29,11 @@ export async function exportBundle(doc: PrintDocument): Promise<Blob> {
   const rewriteElements = (els: AnyElement[]): void => {
     for (const el of els) {
       if (el.type !== "image") continue;
+      // Resolve asset references to inline data URLs first.
+      if (el.assetId && cloned.assets?.[el.assetId]) {
+        el.src = cloned.assets[el.assetId];
+        delete el.assetId;
+      }
       const src = el.src;
       if (!src || !src.startsWith("data:")) continue;
       let filename = seen.get(src);
@@ -45,6 +50,8 @@ export async function exportBundle(doc: PrintDocument): Promise<Blob> {
 
   for (const page of cloned.pages) rewriteElements(page.elements);
   for (const tpl of cloned.templates) rewriteElements(tpl.elements);
+  // Assets have been inlined into image srcs above; drop the pool.
+  delete cloned.assets;
 
   const manifest: Manifest = {
     format: BUNDLE_FORMAT,

@@ -73,49 +73,42 @@ export function buildInsertToolbar(
     const page = store.currentPage;
     if (!page) return;
 
-    const count = files.length;
-    const suggestedCols = Math.max(1, Math.ceil(Math.sqrt(count)));
-    const suggestedRows = Math.max(1, Math.ceil(count / suggestedCols));
-    const cols = askPositiveInt("Grid columns:", suggestedCols);
-    if (cols == null) return;
-    const rows = askPositiveInt("Grid rows:", suggestedRows);
-    if (rows == null) return;
-    const gap = askNonNegativeNumber("Gap between cells (mm):", 0);
-    if (gap == null) return;
-    const fit = askFitMode("Cell fit mode (cover, contain, fill):", "cover");
-    if (!fit) return;
-
-    const availW = store.doc.size.width - gap * (cols - 1);
-    const availH = store.doc.size.height - gap * (rows - 1);
-    if (availW <= 0 || availH <= 0) {
-      alert("Grid/gap is too large for this page size.");
-      return;
-    }
-    const cellW = availW / cols;
-    const cellH = availH / rows;
-
     try {
+      // Prepare images and store each as a shared asset (deduped).
       const prepared = await Promise.all(
         files.map((f) => prepareImportedImage(f)),
       );
-      const created: ImageElement[] = [];
+      const assetIds = prepared.map((p) => store.addAsset(p.dataUrl));
+
+      // Sensible defaults: auto-compute a grid that fits all images.
+      const count = prepared.length;
+      const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+      const rows = Math.max(1, Math.ceil(count / cols));
+      const cellW = store.doc.size.width / cols;
+      const cellH = store.doc.size.height / rows;
+      const fit: ImageElement["fit"] = "cover";
+      const gridGroup = `grid_${Math.random().toString(36).slice(2, 10)}`;
       const total = rows * cols;
+
+      const created: ImageElement[] = [];
       for (let i = 0; i < total; i++) {
-        const src = prepared[i % prepared.length];
+        const idx = i % prepared.length;
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const x = col * (cellW + gap);
-        const y = row * (cellH + gap);
+        const x = col * cellW;
+        const y = row * cellH;
         created.push(
           newImageElement({
-            src: src.dataUrl,
+            src: "", // data lives in shared assets pool
+            assetId: assetIds[idx],
             x,
             y,
             width: cellW,
             height: cellH,
             fit,
-            naturalWidth: src.naturalWidth,
-            naturalHeight: src.naturalHeight,
+            naturalWidth: prepared[idx].naturalWidth,
+            naturalHeight: prepared[idx].naturalHeight,
+            gridGroup,
           }),
         );
       }
@@ -132,43 +125,6 @@ export function buildInsertToolbar(
   });
   host.appendChild(gridInput);
   host.appendChild(railButton("▦", "Add image grid", () => gridInput.click()));
-}
-
-function askPositiveInt(promptText: string, initial: number): number | null {
-  const raw = prompt(promptText, String(initial));
-  if (raw == null) return null;
-  const n = parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 1) {
-    alert("Please enter a whole number >= 1.");
-    return null;
-  }
-  return n;
-}
-
-function askNonNegativeNumber(
-  promptText: string,
-  initial: number,
-): number | null {
-  const raw = prompt(promptText, String(initial));
-  if (raw == null) return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) {
-    alert("Please enter a number >= 0.");
-    return null;
-  }
-  return n;
-}
-
-function askFitMode(
-  promptText: string,
-  initial: ImageElement["fit"],
-): ImageElement["fit"] | null {
-  const raw = prompt(promptText, initial);
-  if (raw == null) return null;
-  const v = raw.trim().toLowerCase();
-  if (v === "cover" || v === "contain" || v === "fill") return v;
-  alert("Fit mode must be one of: cover, contain, fill.");
-  return null;
 }
 
 function railButton(

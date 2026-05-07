@@ -79,6 +79,8 @@ export function buildPropertiesPanel(
     if (el.type === "text") textSection(host, el, requestRender);
     if (el.type === "rect") rectSection(host, el, requestRender);
     if (el.type === "image") imageSection(host, el, requestRender);
+    if (el.type === "image" && (el as ImageElement).gridGroup)
+      gridSection(host, el as ImageElement, requestRender);
     layerSection(host, el, requestRender, renderer);
   };
   store.subscribe(render);
@@ -456,6 +458,123 @@ function imageSection(
     dpiEl.title = `${label} (${Math.round(dpiW)} × ${Math.round(dpiH)} DPI)`;
     grid.appendChild(field("Print DPI", dpiEl));
   }
+  host.appendChild(grid);
+}
+
+function gridSection(
+  host: HTMLElement,
+  el: ImageElement,
+  requestRender: () => void,
+): void {
+  const groupId = el.gridGroup;
+  if (!groupId) return;
+  const page = store.currentPage;
+  if (!page) return;
+
+  const members = page.elements.filter(
+    (e) => e.type === "image" && (e as ImageElement).gridGroup === groupId,
+  ) as ImageElement[];
+  if (members.length < 2) return;
+
+  // Reverse-engineer current grid layout from member positions.
+  const xs = [...new Set(members.map((m) => Math.round(m.x * 1000)))].sort(
+    (a, b) => a - b,
+  );
+  const ys = [...new Set(members.map((m) => Math.round(m.y * 1000)))].sort(
+    (a, b) => a - b,
+  );
+  const currentCols = xs.length;
+  const currentRows = ys.length;
+  const currentFit = members[0].fit;
+  let currentGap = 0;
+  if (currentCols > 1) {
+    const cellW = members[0].width;
+    currentGap = (xs[1] - xs[0]) / 1000 - cellW;
+    if (currentGap < 0) currentGap = 0;
+  } else if (currentRows > 1) {
+    const cellH = members[0].height;
+    currentGap = (ys[1] - ys[0]) / 1000 - cellH;
+    if (currentGap < 0) currentGap = 0;
+  }
+
+  sectionTitle(host, "Grid");
+  const grid = document.createElement("div");
+  grid.className = "grid2";
+
+  const relayout = (cols: number, rows: number, gap: number, fit: ImageElement["fit"]) => {
+    const total = rows * cols;
+    const availW = store.doc.size.width - gap * Math.max(0, cols - 1);
+    const availH = store.doc.size.height - gap * Math.max(0, rows - 1);
+    if (availW <= 0 || availH <= 0) return;
+    const cellW = availW / cols;
+    const cellH = availH / rows;
+
+    store.transact(() => {
+      // Remove excess members or add clones if needed.
+      while (members.length > total) {
+        const removed = members.pop()!;
+        const idx = page.elements.indexOf(removed);
+        if (idx >= 0) page.elements.splice(idx, 1);
+      }
+      while (members.length < total) {
+        const template = members[0];
+        const clone: ImageElement = {
+          ...JSON.parse(JSON.stringify(template)),
+          id: crypto.randomUUID(),
+        };
+        members.push(clone);
+        page.elements.push(clone);
+      }
+      // Reposition all members.
+      for (let i = 0; i < total; i++) {
+        const m = members[i];
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        m.x = col * (cellW + gap);
+        m.y = row * (cellH + gap);
+        m.width = cellW;
+        m.height = cellH;
+        m.fit = fit;
+      }
+    });
+    requestRender();
+  };
+
+  grid.appendChild(
+    field(
+      "Columns",
+      numberInput(currentCols, 1, 50, 1, (v) => {
+        const c = Math.max(1, Math.round(v));
+        const r = Math.max(1, Math.ceil(members.length / c));
+        relayout(c, r, currentGap, currentFit);
+      }),
+    ),
+  );
+  grid.appendChild(
+    field(
+      "Rows",
+      numberInput(currentRows, 1, 50, 1, (v) => {
+        const r = Math.max(1, Math.round(v));
+        const c = Math.max(1, Math.ceil(members.length / r));
+        relayout(c, r, currentGap, currentFit);
+      }),
+    ),
+  );
+  const u = store.prefs.unit;
+  grid.appendChild(
+    field(
+      "Gap",
+      unitInput(currentGap, u, (mm) => {
+        relayout(currentCols, currentRows, Math.max(0, mm), currentFit);
+      }),
+    ),
+  );
+  const fitSel = select(["contain", "cover", "fill"], (v) => {
+    relayout(currentCols, currentRows, currentGap, v as ImageElement["fit"]);
+  });
+  fitSel.value = currentFit;
+  grid.appendChild(field("Fit", fitSel));
+
   host.appendChild(grid);
 }
 

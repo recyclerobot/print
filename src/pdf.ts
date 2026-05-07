@@ -7,6 +7,7 @@ import type {
   RectElement,
   ImageElement,
 } from "./types";
+import { resolveImageSrc } from "./types";
 import { mmToPx } from "./units";
 import { loadImage } from "./webgl/rasterize";
 
@@ -128,7 +129,7 @@ async function rasterizePageToDataUrl(
 
   for (const el of page.elements) {
     if (el.hidden) continue;
-    await drawElementToContext(ctx, el, pxPerMm);
+    await drawElementToContext(ctx, el, pxPerMm, doc);
   }
   ctx.restore();
 
@@ -150,6 +151,7 @@ async function drawElementToContext(
   ctx: CanvasRenderingContext2D,
   el: AnyElement,
   pxPerMm: number,
+  doc: PrintDocument,
 ): Promise<void> {
   ctx.save();
   ctx.globalAlpha = el.opacity;
@@ -162,7 +164,7 @@ async function drawElementToContext(
 
   if (el.type === "rect") drawRectExport(ctx, el, pxPerMm);
   else if (el.type === "text") drawTextExport(ctx, el, pxPerMm);
-  else if (el.type === "image") await drawImageExport(ctx, el, pxPerMm);
+  else if (el.type === "image") await drawImageExport(ctx, el, pxPerMm, doc);
 
   ctx.restore();
 }
@@ -330,10 +332,11 @@ async function drawImageExport(
   ctx: CanvasRenderingContext2D,
   el: ImageElement,
   pxPerMm: number,
+  doc: PrintDocument,
 ): Promise<void> {
   let img: HTMLImageElement;
   try {
-    img = await loadImage(el.src);
+    img = await loadImage(resolveImageSrc(el, doc));
   } catch {
     return;
   }

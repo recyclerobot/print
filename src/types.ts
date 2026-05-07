@@ -52,10 +52,14 @@ export interface TextElement extends BaseElement {
 
 export interface ImageElement extends BaseElement {
   type: "image";
-  src: string; // data URL
+  src: string; // data URL or empty when assetId is set
   fit: "contain" | "cover" | "fill";
   naturalWidth?: number;
   naturalHeight?: number;
+  /** Points into PrintDocument.assets — avoids duplicating large data URLs. */
+  assetId?: string;
+  /** Elements sharing the same gridGroup form a page-filling image grid. */
+  gridGroup?: string;
 }
 
 export interface RectElement extends BaseElement {
@@ -92,8 +96,21 @@ export interface PrintDocument {
   pages: Page[];
   templates: Template[];
   defaultTemplateId?: string;
+  /** Shared image data-URL pool keyed by asset id. */
+  assets?: Record<string, string>;
   createdAt: number;
   updatedAt: number;
+}
+
+/** Resolve the actual data-URL for an image element. If assetId is set and
+ *  exists in the document asset pool, return that; otherwise fall back to
+ *  the inline `src` field. */
+export function resolveImageSrc(
+  el: ImageElement,
+  doc: PrintDocument,
+): string {
+  if (el.assetId && doc.assets?.[el.assetId]) return doc.assets[el.assetId];
+  return el.src;
 }
 
 export const A_SIZES: Record<string, PageSize> = {

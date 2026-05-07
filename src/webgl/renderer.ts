@@ -1,4 +1,5 @@
 import type { PrintDocument, AnyElement } from "../types";
+import { resolveImageSrc } from "../types";
 import {
   rasterizeElement,
   rasterizeImage,
@@ -370,11 +371,12 @@ export class Renderer {
     if (needsRebuild) {
       let canvas: HTMLCanvasElement | null = null;
       if (el.type === "image") {
-        const img = getCachedImage(el.src);
+        const imgSrc = resolveImageSrc(el, this.doc);
+        const img = getCachedImage(imgSrc);
         if (img) {
           canvas = rasterizeImage(el, img, renderScale);
         } else {
-          loadImage(el.src)
+          loadImage(imgSrc)
             .then(() => this.invalidate(el.id))
             .catch(() => {});
         }
@@ -530,7 +532,7 @@ function signature(el: AnyElement): string {
     return `${base}|${el.fill}|${el.stroke}|${el.strokeWidth}|${el.cornerRadius}`;
   }
   if (el.type === "image") {
-    return `${base}|${el.src.length}|${el.fit}`;
+    return `${base}|${(el.assetId ?? el.src).length}|${el.fit}`;
   }
   return base;
 }

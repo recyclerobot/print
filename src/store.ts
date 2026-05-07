@@ -540,6 +540,39 @@ class Store {
     });
   }
 
+  /** Store a data URL in the shared asset pool and return an asset id. If the
+   *  exact same data URL is already present, returns the existing id. */
+  addAsset(dataUrl: string): string {
+    if (!this.doc.assets) this.doc.assets = {};
+    // Deduplicate by value — prevents storing the same photo twice.
+    for (const [id, val] of Object.entries(this.doc.assets)) {
+      if (val === dataUrl) return id;
+    }
+    const id = `asset_${Math.random().toString(36).slice(2, 10)}`;
+    this.doc.assets[id] = dataUrl;
+    return id;
+  }
+
+  /** Remove any asset that is no longer referenced by any image element. */
+  gcAssets(): void {
+    if (!this.doc.assets) return;
+    const used = new Set<string>();
+    for (const page of this.doc.pages) {
+      for (const el of page.elements) {
+        if (el.type === "image" && el.assetId) used.add(el.assetId);
+      }
+    }
+    for (const tpl of this.doc.templates) {
+      for (const el of tpl.elements) {
+        if (el.type === "image" && (el as ImageElement).assetId)
+          used.add((el as ImageElement).assetId!);
+      }
+    }
+    for (const id of Object.keys(this.doc.assets)) {
+      if (!used.has(id)) delete this.doc.assets[id];
+    }
+  }
+
   resetDocument(): void {
     this.transact(() => {
       const fresh = newDocument(this.doc.size);
