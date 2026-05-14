@@ -61,10 +61,10 @@ export function buildPropertiesPanel(
     lastPageId = pageId;
 
     host.innerHTML = "";
-    // Document properties at top
-    documentSection(host, requestRender, renderer);
 
     if (!sel.length) {
+      // Show document settings only when nothing is selected.
+      documentSection(host, requestRender, renderer);
       const empty = document.createElement("div");
       empty.className = "empty";
       empty.textContent =
@@ -446,22 +446,47 @@ function imageSection(
   sectionTitle(host, "Image");
   const grid = document.createElement("div");
   grid.className = "grid2";
+  const u = store.prefs.unit;
   const fit = select(["contain", "cover", "fill"], (v) => {
     store.updateElement(el.id, { fit: v as ImageElement["fit"] });
     requestRender();
   });
   fit.value = el.fit;
   grid.appendChild(field("Fit", fit));
+
+  // Repeat-aware measurements
+  const rx = el.repeatX ?? 1;
+  const ry = el.repeatY ?? 1;
+  const gapMm = el.repeatGap ?? 0;
+  const isRepeated = rx > 1 || ry > 1;
+
+  // Tile dimensions (each cell of the repeated grid)
+  const tileW = (el.width - gapMm * (rx - 1)) / rx;
+  const tileH = (el.height - gapMm * (ry - 1)) / ry;
+
+  if (isRepeated) {
+    const totalR = document.createElement("div");
+    totalR.className = "readout small";
+    totalR.textContent = `${formatUnit(el.width, u)} × ${formatUnit(el.height, u)}`;
+    grid.appendChild(field("Total area", totalR));
+
+    const tileR = document.createElement("div");
+    tileR.className = "readout small";
+    tileR.textContent = `${formatUnit(tileW, u)} × ${formatUnit(tileH, u)}`;
+    grid.appendChild(field("Tile size", tileR));
+  }
+
   if (el.naturalWidth && el.naturalHeight) {
     const r = document.createElement("div");
     r.className = "readout small";
     r.textContent = `${el.naturalWidth} × ${el.naturalHeight}px`;
     grid.appendChild(field("Source", r));
 
-    // Effective print DPI: source pixels per inch when rendered at the current
-    // element size on the page. Use the *fit* dimension that limits resolution.
-    const wIn = el.width / 25.4;
-    const hIn = el.height / 25.4;
+    // Effective print DPI based on per-tile dimensions (not total area).
+    const effW = isRepeated ? tileW : el.width;
+    const effH = isRepeated ? tileH : el.height;
+    const wIn = effW / 25.4;
+    const hIn = effH / 25.4;
     const dpiW = wIn > 0 ? el.naturalWidth / wIn : 0;
     const dpiH = hIn > 0 ? el.naturalHeight / hIn : 0;
     let dpi = 0;

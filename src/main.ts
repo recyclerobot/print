@@ -32,6 +32,7 @@ renderer.setDocument(store.doc, store.currentPageId, store.selectedIds);
 renderer.showGrid = store.prefs.showGrid;
 renderer.showMargins = store.prefs.showMargins;
 renderer.showBleed = store.prefs.showBleed;
+renderer.onNeedsRender = () => requestRender();
 
 let pending = false;
 function requestRender(): void {

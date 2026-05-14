@@ -72,6 +72,8 @@ export class Renderer {
   // (trim) background and elements clipped to the page rect. All overlays
   // (bleed area, grid, margins, selection handles) are suppressed.
   previewMode = false;
+  /** Called when an async image load completes and a re-render is needed. */
+  onNeedsRender: (() => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -377,7 +379,10 @@ export class Renderer {
           canvas = rasterizeImage(el, img, renderScale);
         } else {
           loadImage(imgSrc)
-            .then(() => this.invalidate(el.id))
+            .then(() => {
+              this.invalidate(el.id);
+              this.onNeedsRender?.();
+            })
             .catch(() => {});
         }
       } else {
