@@ -230,16 +230,40 @@ function transformSection(
   // Render W, the chain-link toggle, and H as a single row that spans both
   // columns of the grid so W and H sit visually side-by-side with the lock
   // wedged between them (Figma / Photoshop pattern).
-  const ratio = el.width / el.height;
+  //
+  // For image elements that are repeated, W/H represent the *tile* (single
+  // image) size, NOT the full bounding box. The bounding box is derived as
+  //   bbox = tile * count + gap * (count - 1)
+  // This matches the user's mental model: "W and H are the image's own
+  // dimensions; the repeat counts simply tile it across the canvas."
+  const isImage = el.type === "image";
+  const img = isImage ? (el as ImageElement) : null;
+  const rx = img?.repeatX ?? 1;
+  const ry = img?.repeatY ?? 1;
+  const gap = img?.repeatGap ?? 0;
+  const tileW = isImage ? (el.width - gap * (rx - 1)) / rx : el.width;
+  const tileH = isImage ? (el.height - gap * (ry - 1)) / ry : el.height;
+  const ratio = tileW / tileH;
   const arLocked = el.aspectRatioLocked ?? false;
 
   const wField = field(
-    "W",
-    unitInput(el.width, u, (mm) => {
-      const w = Math.max(1, mm);
-      const patch: Partial<AnyElement> = { width: w };
-      if (el.aspectRatioLocked) patch.height = Math.max(1, w / ratio);
-      store.updateElement(el.id, patch);
+    isImage ? "W (image)" : "W",
+    unitInput(tileW, u, (mm) => {
+      const newTileW = Math.max(1, mm);
+      if (isImage) {
+        const newTileH = el.aspectRatioLocked
+          ? Math.max(1, newTileW / ratio)
+          : tileH;
+        store.updateElement(el.id, {
+          width: newTileW * rx + gap * (rx - 1),
+          height: newTileH * ry + gap * (ry - 1),
+        });
+      } else {
+        const patch: Partial<AnyElement> = { width: newTileW };
+        if (el.aspectRatioLocked)
+          patch.height = Math.max(1, newTileW / ratio);
+        store.updateElement(el.id, patch);
+      }
       requestRender();
     }),
   );
@@ -259,12 +283,23 @@ function transformSection(
   });
 
   const hField = field(
-    "H",
-    unitInput(el.height, u, (mm) => {
-      const h = Math.max(1, mm);
-      const patch: Partial<AnyElement> = { height: h };
-      if (el.aspectRatioLocked) patch.width = Math.max(1, h * ratio);
-      store.updateElement(el.id, patch);
+    isImage ? "H (image)" : "H",
+    unitInput(tileH, u, (mm) => {
+      const newTileH = Math.max(1, mm);
+      if (isImage) {
+        const newTileW = el.aspectRatioLocked
+          ? Math.max(1, newTileH * ratio)
+          : tileW;
+        store.updateElement(el.id, {
+          width: newTileW * rx + gap * (rx - 1),
+          height: newTileH * ry + gap * (ry - 1),
+        });
+      } else {
+        const patch: Partial<AnyElement> = { height: newTileH };
+        if (el.aspectRatioLocked)
+          patch.width = Math.max(1, newTileH * ratio);
+        store.updateElement(el.id, patch);
+      }
       requestRender();
     }),
   );
@@ -532,111 +567,99 @@ function imageSection(
   host.appendChild(totalField);
 
   // --- Repeat controls ---
-  // The user thinks in terms of *tile size*, not repeat counts. Tile width /
-  // tile height inputs are the primary controls; repeat counts are derived
-  // from the element's bounding box. The "Fill page" button resizes the
-  // element to cover the whole page so the tile pattern tiles edge-to-edge.
+  // W/H in the Transform section now control the *image* (tile) dimensions.
+  // The Repeat section just sets how many times that tile is laid out
+  // horizontally and vertically. The element's bounding box is derived as
+  //   bbox = tile * count + gap * (count - 1)
+  // and updated on every change so the canvas reflects the new layout.
   sectionTitle(host, "Repeat");
   const rGrid = document.createElement("div");
   rGrid.className = "grid2";
 
   const u2 = store.prefs.unit;
 
-  // Recompute repeat counts from a desired tile size, holding the element's
-  // current bounding box constant. Accounts for inter-tile gap.
-  const repeatsForTile = (
-    tileMm: number,
-    spanMm: number,
-    gapMm: number,
-  ): number => {
-    if (tileMm <= 0) return 1;
-    // span ≈ n*tile + (n-1)*gap → n ≈ (span + gap) / (tile + gap)
-    return Math.max(1, Math.round((spanMm + gapMm) / (tileMm + gapMm)));
-  };
+  // Snapshot the current tile dimensions; recomputing the bounding box on
+  // every count / gap change requires knowing the per-tile size, which is
+  // stable across this section's lifetime (changes to W/H rebuild the panel).
+  const curRx = el.repeatX ?? 1;
+  const curRy = el.repeatY ?? 1;
+  const curGap = el.repeatGap ?? 0;
+  const curTileW = (el.width - curGap * (curRx - 1)) / curRx;
+  const curTileH = (el.height - curGap * (curRy - 1)) / curRy;
 
-  const tileWInput = unitInput(
-    // Initial value: derived from current element width / repeatX.
-    el.width / Math.max(1, el.repeatX ?? 1),
-    u2,
-    (mm) => {
-      const tile = Math.max(0.1, mm);
-      const gap = el.repeatGap ?? 0;
-      const rx = repeatsForTile(tile, el.width, gap);
-      store.updateElement(el.id, { repeatX: rx });
-      requestRender();
-    },
-  );
-  rGrid.appendChild(field("Tile width", tileWInput));
+  const rxInput = numberInput(curRx, 1, 100, 1, (v) => {
+    const newRx = Math.max(1, Math.round(v));
+    store.updateElement(el.id, {
+      repeatX: newRx,
+      width: curTileW * newRx + curGap * (newRx - 1),
+    });
+    requestRender();
+  });
+  rGrid.appendChild(field("Horizontal ×", rxInput));
 
-  const tileHInput = unitInput(
-    el.height / Math.max(1, el.repeatY ?? 1),
-    u2,
-    (mm) => {
-      const tile = Math.max(0.1, mm);
-      const gap = el.repeatGap ?? 0;
-      const ry = repeatsForTile(tile, el.height, gap);
-      store.updateElement(el.id, { repeatY: ry });
-      requestRender();
-    },
-  );
-  rGrid.appendChild(field("Tile height", tileHInput));
+  const ryInput = numberInput(curRy, 1, 100, 1, (v) => {
+    const newRy = Math.max(1, Math.round(v));
+    store.updateElement(el.id, {
+      repeatY: newRy,
+      height: curTileH * newRy + curGap * (newRy - 1),
+    });
+    requestRender();
+  });
+  rGrid.appendChild(field("Vertical ×", ryInput));
 
-  // Gap on its own full-width row beneath the tile width/height pair.
+  // Gap on its own full-width row beneath the count pair.
   const gapRow = document.createElement("div");
   gapRow.className = "full-row";
   gapRow.appendChild(
     field(
       "Gap",
-      unitInput(el.repeatGap ?? 0, u2, (mm) => {
-        store.updateElement(el.id, { repeatGap: Math.max(0, mm) });
+      unitInput(curGap, u2, (mm) => {
+        const newGap = Math.max(0, mm);
+        store.updateElement(el.id, {
+          repeatGap: newGap,
+          width: curTileW * curRx + newGap * (curRx - 1),
+          height: curTileH * curRy + newGap * (curRy - 1),
+        });
         requestRender();
       }),
     ),
   );
 
-  // Keep tile inputs in sync when something else changes the element (drag,
-  // resize, undo, etc.). Skip when the input is focused so we don't fight
-  // the user's typing.
+  // Keep count inputs in sync when something else changes them (undo, etc.).
+  // Skip when the input is focused so we don't fight the user's typing.
   ctx.addSub(
-    bindBoth(measurements$, $unit, (m, u) => {
+    measurements$.subscribe((m) => {
       if (!m) return;
-      if (document.activeElement !== tileWInput) {
-        tileWInput.value = toUnit(m.tileWidth, u).toFixed(
-          u === "mm" || u === "pt" ? 1 : 3,
-        );
-      }
-      if (document.activeElement !== tileHInput) {
-        tileHInput.value = toUnit(m.tileHeight, u).toFixed(
-          u === "mm" || u === "pt" ? 1 : 3,
-        );
-      }
+      if (document.activeElement !== rxInput) rxInput.value = String(m.repeatX);
+      if (document.activeElement !== ryInput) ryInput.value = String(m.repeatY);
     }),
   );
 
-  // "Fill page" button — resize the element to cover the full page and
-  // recompute repeat counts from the current tile size so the pattern tiles
-  // edge-to-edge automatically.
+  // "Fill page" button — keep the current tile size, compute how many tiles
+  // fit on the page horizontally and vertically (gap-aware), and resize the
+  // element bounding box to exactly cover those tiles, anchored to (0, 0).
   const fillBtn = document.createElement("button");
   fillBtn.type = "button";
   fillBtn.className = "btn fill-page-btn";
-  fillBtn.textContent = "Fill page with tile";
+  fillBtn.textContent = "Fill page with image";
   fillBtn.title =
-    "Resize this image to cover the whole page and repeat the current tile to fill it.";
+    "Repeat the image as many times as fits on the page using its current W and H.";
   fillBtn.addEventListener("click", () => {
     const page = store.doc.size;
-    const gap = el.repeatGap ?? 0;
-    // Use the current tile size (from the input, not stale el data).
-    const tileW = Math.max(0.1, fromUnit(parseFloat(tileWInput.value), u2));
-    const tileH = Math.max(0.1, fromUnit(parseFloat(tileHInput.value), u2));
-    const rx = repeatsForTile(tileW, page.width, gap);
-    const ry = repeatsForTile(tileH, page.height, gap);
+    const fitCount = (tile: number, span: number, g: number): number => {
+      if (tile <= 0) return 1;
+      // n*tile + (n-1)*g ≤ span  →  n ≤ (span + g) / (tile + g)
+      return Math.max(1, Math.floor((span + g) / (tile + g)));
+    };
+    const newRx = fitCount(curTileW, page.width, curGap);
+    const newRy = fitCount(curTileH, page.height, curGap);
     store.updateElement(el.id, {
       x: 0,
       y: 0,
-      width: page.width,
-      height: page.height,
-      repeatX: rx,
-      repeatY: ry,
+      repeatX: newRx,
+      repeatY: newRy,
+      width: curTileW * newRx + curGap * (newRx - 1),
+      height: curTileH * newRy + curGap * (newRy - 1),
     });
     requestRender();
   });
