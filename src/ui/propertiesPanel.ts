@@ -260,8 +260,7 @@ function transformSection(
         });
       } else {
         const patch: Partial<AnyElement> = { width: newTileW };
-        if (el.aspectRatioLocked)
-          patch.height = Math.max(1, newTileW / ratio);
+        if (el.aspectRatioLocked) patch.height = Math.max(1, newTileW / ratio);
         store.updateElement(el.id, patch);
       }
       requestRender();
@@ -296,8 +295,7 @@ function transformSection(
         });
       } else {
         const patch: Partial<AnyElement> = { height: newTileH };
-        if (el.aspectRatioLocked)
-          patch.width = Math.max(1, newTileH * ratio);
+        if (el.aspectRatioLocked) patch.width = Math.max(1, newTileH * ratio);
         store.updateElement(el.id, patch);
       }
       requestRender();
