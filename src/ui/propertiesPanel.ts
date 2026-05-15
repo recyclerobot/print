@@ -7,6 +7,12 @@ import type {
   ImageElement,
 } from "../types";
 import { formatUnit, fromUnit, toUnit } from "../units";
+import {
+  $unit,
+  imageMeasurementsAtom,
+  imageDpiAtom,
+} from "../state";
+import type { ReadableAtom } from "nanostores";
 
 // Chain-link SVG icons for the aspect-ratio lock toggle (16×16, stroke-based).
 const AR_SVG = (d: string) =>
@@ -25,12 +31,16 @@ export function buildPropertiesPanel(
 ): void {
   let lastSelKey = "";
   let lastPageId = "";
+  // Track atom subscriptions created during the most recent rebuild so we can
+  // unbind them before the next rebuild (avoids leaks + stale DOM updates).
+  let activeSubs: Array<() => void> = [];
+  const ctx: PanelContext = {
+    addSub(unsub) {
+      activeSubs.push(unsub);
+    },
+  };
 
   const render = (): void => {
-    // If the user is currently typing in a control inside this panel and the
-    // selection / page hasn't changed, skip the rebuild so focus + caret are
-    // preserved. The underlying input handlers already pushed values into the
-    // store; the panel doesn't need to be redrawn until the selection changes.
     const sel = store.selected();
     const selKey = sel.map((e) => e.id).join(",");
     const pageId = store.currentPageId;
@@ -42,28 +52,21 @@ export function buildPropertiesPanel(
         active.tagName === "TEXTAREA" ||
         active.tagName === "SELECT" ||
         active.isContentEditable);
-    if (
-      editingHere &&
-      selKey === lastSelKey &&
-      pageId === lastPageId &&
-      // For text edits driven from the canvas overlay, we still want
-      // the textarea value here to reflect the latest store state.
-      // The handlers below set values from the store on rebuild.
-      true
-    ) {
-      // Sync the focused textarea value if it represents the selected text
-      // element's text — keeps panel and canvas overlay consistent without
-      // a full rebuild.
+    if (editingHere && selKey === lastSelKey && pageId === lastPageId) {
+      // Skip rebuild — focused inputs keep their caret. Live readouts bound
+      // to atoms via `ctx.addSub` continue to update independently.
       syncLiveTextarea(host, sel);
       return;
     }
     lastSelKey = selKey;
     lastPageId = pageId;
 
+    // Tear down previous subscriptions before clearing the DOM.
+    for (const u of activeSubs) u();
+    activeSubs = [];
     host.innerHTML = "";
 
     if (!sel.length) {
-      // Show document settings only when nothing is selected.
       documentSection(host, requestRender, renderer);
       const empty = document.createElement("div");
       empty.className = "empty";
@@ -88,11 +91,17 @@ export function buildPropertiesPanel(
     transformSection(host, el, requestRender);
     if (el.type === "text") textSection(host, el, requestRender);
     if (el.type === "rect") rectSection(host, el, requestRender);
-    if (el.type === "image") imageSection(host, el, requestRender);
+    if (el.type === "image") imageSection(host, el, requestRender, ctx);
     layerSection(host, el, requestRender, renderer);
   };
   store.subscribe(render);
   render();
+}
+
+/** Per-panel build context. Lets sections register atom subscriptions whose
+ *  lifecycle is tied to the most recent panel rebuild. */
+interface PanelContext {
+  addSub(unsubscribe: () => void): void;
 }
 
 // When the panel skips a full rebuild because a control is focused, keep the
@@ -442,11 +451,11 @@ function imageSection(
   host: HTMLElement,
   el: ImageElement,
   requestRender: () => void,
+  ctx: PanelContext,
 ): void {
   sectionTitle(host, "Image");
   const grid = document.createElement("div");
   grid.className = "grid2";
-  const u = store.prefs.unit;
   const fit = select(["contain", "cover", "fill"], (v) => {
     store.updateElement(el.id, { fit: v as ImageElement["fit"] });
     requestRender();
@@ -454,27 +463,39 @@ function imageSection(
   fit.value = el.fit;
   grid.appendChild(field("Fit", fit));
 
-  // Repeat-aware measurements
-  const rx = el.repeatX ?? 1;
-  const ry = el.repeatY ?? 1;
-  const gapMm = el.repeatGap ?? 0;
-  const isRepeated = rx > 1 || ry > 1;
+  // ----- Live, atom-bound readouts -----------------------------------------
+  // Each readout is a DOM node bound to a computed atom. When repeat values
+  // change (or the unit), the atom recomputes and the node updates without
+  // requiring a full panel rebuild. This avoids the stale-derived-value bug.
 
-  // Tile dimensions (each cell of the repeated grid)
-  const tileW = (el.width - gapMm * (rx - 1)) / rx;
-  const tileH = (el.height - gapMm * (ry - 1)) / ry;
+  const measurements$ = imageMeasurementsAtom(el.id);
+  const dpi$ = imageDpiAtom(el.id);
 
-  if (isRepeated) {
-    const totalR = document.createElement("div");
-    totalR.className = "readout small";
-    totalR.textContent = `${formatUnit(el.width, u)} × ${formatUnit(el.height, u)}`;
-    grid.appendChild(field("Total area", totalR));
+  // "Total area" + "Tile size" — only visible when the image is repeated.
+  const totalR = makeReadout("readout small");
+  const totalField = field("Total area", totalR);
+  totalField.style.display = "none";
+  grid.appendChild(totalField);
 
-    const tileR = document.createElement("div");
-    tileR.className = "readout small";
-    tileR.textContent = `${formatUnit(tileW, u)} × ${formatUnit(tileH, u)}`;
-    grid.appendChild(field("Tile size", tileR));
-  }
+  const tileR = makeReadout("readout small");
+  const tileField = field("Tile size", tileR);
+  tileField.style.display = "none";
+  grid.appendChild(tileField);
+
+  ctx.addSub(
+    bindBoth(measurements$, $unit, (m, u) => {
+      if (!m) return;
+      if (m.isRepeated) {
+        totalField.style.display = "";
+        tileField.style.display = "";
+        totalR.textContent = `${formatUnit(m.totalWidth, u)} × ${formatUnit(m.totalHeight, u)}`;
+        tileR.textContent = `${formatUnit(m.tileWidth, u)} × ${formatUnit(m.tileHeight, u)}`;
+      } else {
+        totalField.style.display = "none";
+        tileField.style.display = "none";
+      }
+    }),
+  );
 
   if (el.naturalWidth && el.naturalHeight) {
     const r = document.createElement("div");
@@ -482,42 +503,33 @@ function imageSection(
     r.textContent = `${el.naturalWidth} × ${el.naturalHeight}px`;
     grid.appendChild(field("Source", r));
 
-    // Effective print DPI based on per-tile dimensions (not total area).
-    const effW = isRepeated ? tileW : el.width;
-    const effH = isRepeated ? tileH : el.height;
-    const wIn = effW / 25.4;
-    const hIn = effH / 25.4;
-    const dpiW = wIn > 0 ? el.naturalWidth / wIn : 0;
-    const dpiH = hIn > 0 ? el.naturalHeight / hIn : 0;
-    let dpi = 0;
-    if (el.fit === "contain") {
-      // Whichever axis is the binding constraint determines actual sampling.
-      dpi = Math.min(dpiW, dpiH);
-    } else if (el.fit === "cover") {
-      dpi = Math.max(dpiW, dpiH);
-    } else {
-      // 'fill' stretches independently — report the lower of the two.
-      dpi = Math.min(dpiW, dpiH);
-    }
+    // Print DPI readout — bound to dpi atom which depends on tile size.
     const dpiEl = document.createElement("div");
     dpiEl.className = "readout small dpi-readout";
-    const rounded = Math.round(dpi);
-    let cls = "ok";
-    let label = "Excellent";
-    if (rounded < 150) {
-      cls = "bad";
-      label = "Low — may look pixelated in print";
-    } else if (rounded < 220) {
-      cls = "warn";
-      label = "OK for draft prints";
-    } else if (rounded < 300) {
-      cls = "warn";
-      label = "Good";
-    }
-    dpiEl.classList.add(cls);
-    dpiEl.textContent = `${rounded} DPI`;
-    dpiEl.title = `${label} (${Math.round(dpiW)} × ${Math.round(dpiH)} DPI)`;
     grid.appendChild(field("Print DPI", dpiEl));
+
+    ctx.addSub(
+      dpi$.subscribe((d) => {
+        if (!d) return;
+        const rounded = Math.round(d.dpi);
+        dpiEl.classList.remove("ok", "warn", "bad");
+        let cls = "ok";
+        let label = "Excellent";
+        if (rounded < 150) {
+          cls = "bad";
+          label = "Low — may look pixelated in print";
+        } else if (rounded < 220) {
+          cls = "warn";
+          label = "OK for draft prints";
+        } else if (rounded < 300) {
+          cls = "warn";
+          label = "Good";
+        }
+        dpiEl.classList.add(cls);
+        dpiEl.textContent = `${rounded} DPI`;
+        dpiEl.title = `${label} (${Math.round(d.dpiW)} × ${Math.round(d.dpiH)} DPI)`;
+      }),
+    );
   }
 
   // --- Repeat controls ---
@@ -555,6 +567,26 @@ function imageSection(
   host.appendChild(rGrid);
 
   host.appendChild(grid);
+}
+
+// Helper: subscribe to two atoms together and call cb with both values.
+function bindBoth<A, B>(
+  a$: ReadableAtom<A>,
+  b$: ReadableAtom<B>,
+  cb: (a: A, b: B) => void,
+): () => void {
+  const u1 = a$.subscribe(() => cb(a$.get(), b$.get()));
+  const u2 = b$.subscribe(() => cb(a$.get(), b$.get()));
+  return () => {
+    u1();
+    u2();
+  };
+}
+
+function makeReadout(cls: string): HTMLDivElement {
+  const d = document.createElement("div");
+  d.className = cls;
+  return d;
 }
 
 function layerSection(

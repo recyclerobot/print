@@ -9,6 +9,14 @@ import type {
   PageSize,
 } from "./types";
 import { A_SIZES } from "./types";
+import {
+  $doc,
+  $currentPageId,
+  $selectedIds,
+  $prefs,
+  $undoDepth,
+  $redoDepth,
+} from "./state";
 
 const LEGACY_DOC_KEY = "print.document.v1";
 const PREFS_KEY = "print.prefs.v1";
@@ -352,6 +360,7 @@ class Store {
   }
   emit(): void {
     this.save();
+    syncAtoms(this);
     this.listeners.forEach((l) => l());
   }
 
@@ -799,3 +808,25 @@ class Store {
 }
 
 export const store = new Store();
+// Push the initial snapshot into the reactive layer so atoms have data on
+// first render (before any mutation has occurred).
+syncAtoms(store);
+
+/**
+ * Mirror the current store state into the reactive atoms in `state.ts`.
+ * Called from `emit()` after each mutation. Imported lazily via require-style
+ * top-level import below to avoid a circular import at module init.
+ */
+function syncAtoms(s: Store): void {
+  // Shallow-clone the doc so reference equality differs from the previous
+  // value: nanostores skips notifications when set() receives the same ref,
+  // and our mutations happen in place. Inner pages/templates/assets keep
+  // their references, so this is cheap (no deep copy).
+  $doc.set({ ...s.doc });
+  $currentPageId.set(s.currentPageId);
+  // Always emit a fresh Set instance so equality-based subscribers fire.
+  $selectedIds.set(new Set(s.selectedIds));
+  $prefs.set({ ...s.prefs });
+  $undoDepth.set(s.canUndo ? 1 : 0);
+  $redoDepth.set(s.canRedo ? 1 : 0);
+}
