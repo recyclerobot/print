@@ -7,11 +7,7 @@ import type {
   ImageElement,
 } from "../types";
 import { formatUnit, fromUnit, toUnit } from "../units";
-import {
-  $unit,
-  imageMeasurementsAtom,
-  imageDpiAtom,
-} from "../state";
+import { $unit, imageMeasurementsAtom, imageDpiAtom } from "../state";
 import type { ReadableAtom } from "nanostores";
 
 // Chain-link SVG icons for the aspect-ratio lock toggle (16×16, stroke-based).
@@ -471,28 +467,21 @@ function imageSection(
   const measurements$ = imageMeasurementsAtom(el.id);
   const dpi$ = imageDpiAtom(el.id);
 
-  // "Total area" + "Tile size" — only visible when the image is repeated.
+  // "Total area" — only visible when the image is repeated. (Tile size is
+  // now an editable input below, so no readout is needed for it.)
   const totalR = makeReadout("readout small");
   const totalField = field("Total area", totalR);
   totalField.style.display = "none";
   grid.appendChild(totalField);
-
-  const tileR = makeReadout("readout small");
-  const tileField = field("Tile size", tileR);
-  tileField.style.display = "none";
-  grid.appendChild(tileField);
 
   ctx.addSub(
     bindBoth(measurements$, $unit, (m, u) => {
       if (!m) return;
       if (m.isRepeated) {
         totalField.style.display = "";
-        tileField.style.display = "";
         totalR.textContent = `${formatUnit(m.totalWidth, u)} × ${formatUnit(m.totalHeight, u)}`;
-        tileR.textContent = `${formatUnit(m.tileWidth, u)} × ${formatUnit(m.tileHeight, u)}`;
       } else {
         totalField.style.display = "none";
-        tileField.style.display = "none";
       }
     }),
   );
@@ -533,28 +522,55 @@ function imageSection(
   }
 
   // --- Repeat controls ---
+  // The user thinks in terms of *tile size*, not repeat counts. Tile width /
+  // tile height inputs are the primary controls; repeat counts are derived
+  // from the element's bounding box. The "Fill page" button resizes the
+  // element to cover the whole page so the tile pattern tiles edge-to-edge.
   sectionTitle(host, "Repeat");
   const rGrid = document.createElement("div");
   rGrid.className = "grid2";
-  rGrid.appendChild(
-    field(
-      "Horizontal",
-      numberInput(el.repeatX ?? 1, 1, 50, 1, (v) => {
-        store.updateElement(el.id, { repeatX: Math.max(1, Math.round(v)) });
-        requestRender();
-      }),
-    ),
-  );
-  rGrid.appendChild(
-    field(
-      "Vertical",
-      numberInput(el.repeatY ?? 1, 1, 50, 1, (v) => {
-        store.updateElement(el.id, { repeatY: Math.max(1, Math.round(v)) });
-        requestRender();
-      }),
-    ),
-  );
+
   const u2 = store.prefs.unit;
+
+  // Recompute repeat counts from a desired tile size, holding the element's
+  // current bounding box constant. Accounts for inter-tile gap.
+  const repeatsForTile = (
+    tileMm: number,
+    spanMm: number,
+    gapMm: number,
+  ): number => {
+    if (tileMm <= 0) return 1;
+    // span ≈ n*tile + (n-1)*gap → n ≈ (span + gap) / (tile + gap)
+    return Math.max(1, Math.round((spanMm + gapMm) / (tileMm + gapMm)));
+  };
+
+  const tileWInput = unitInput(
+    // Initial value: derived from current element width / repeatX.
+    el.width / Math.max(1, el.repeatX ?? 1),
+    u2,
+    (mm) => {
+      const tile = Math.max(0.1, mm);
+      const gap = el.repeatGap ?? 0;
+      const rx = repeatsForTile(tile, el.width, gap);
+      store.updateElement(el.id, { repeatX: rx });
+      requestRender();
+    },
+  );
+  rGrid.appendChild(field("Tile width", tileWInput));
+
+  const tileHInput = unitInput(
+    el.height / Math.max(1, el.repeatY ?? 1),
+    u2,
+    (mm) => {
+      const tile = Math.max(0.1, mm);
+      const gap = el.repeatGap ?? 0;
+      const ry = repeatsForTile(tile, el.height, gap);
+      store.updateElement(el.id, { repeatY: ry });
+      requestRender();
+    },
+  );
+  rGrid.appendChild(field("Tile height", tileHInput));
+
   rGrid.appendChild(
     field(
       "Gap",
@@ -564,7 +580,55 @@ function imageSection(
       }),
     ),
   );
+
+  // Keep tile inputs in sync when something else changes the element (drag,
+  // resize, undo, etc.). Skip when the input is focused so we don't fight
+  // the user's typing.
+  ctx.addSub(
+    bindBoth(measurements$, $unit, (m, u) => {
+      if (!m) return;
+      if (document.activeElement !== tileWInput) {
+        tileWInput.value = toUnit(m.tileWidth, u).toFixed(
+          u === "mm" || u === "pt" ? 1 : 3,
+        );
+      }
+      if (document.activeElement !== tileHInput) {
+        tileHInput.value = toUnit(m.tileHeight, u).toFixed(
+          u === "mm" || u === "pt" ? 1 : 3,
+        );
+      }
+    }),
+  );
+
+  // "Fill page" button — resize the element to cover the full page and
+  // recompute repeat counts from the current tile size so the pattern tiles
+  // edge-to-edge automatically.
+  const fillBtn = document.createElement("button");
+  fillBtn.type = "button";
+  fillBtn.className = "btn fill-page-btn";
+  fillBtn.textContent = "Fill page with tile";
+  fillBtn.title =
+    "Resize this image to cover the whole page and repeat the current tile to fill it.";
+  fillBtn.addEventListener("click", () => {
+    const page = store.doc.size;
+    const gap = el.repeatGap ?? 0;
+    // Use the current tile size (from the input, not stale el data).
+    const tileW = Math.max(0.1, fromUnit(parseFloat(tileWInput.value), u2));
+    const tileH = Math.max(0.1, fromUnit(parseFloat(tileHInput.value), u2));
+    const rx = repeatsForTile(tileW, page.width, gap);
+    const ry = repeatsForTile(tileH, page.height, gap);
+    store.updateElement(el.id, {
+      x: 0,
+      y: 0,
+      width: page.width,
+      height: page.height,
+      repeatX: rx,
+      repeatY: ry,
+    });
+    requestRender();
+  });
   host.appendChild(rGrid);
+  host.appendChild(fillBtn);
 
   host.appendChild(grid);
 }
