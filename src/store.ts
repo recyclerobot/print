@@ -306,9 +306,16 @@ class Store {
           localStorage.setItem(key, payload);
         } catch (e2) {
           if (isQuotaError(e2)) {
+            const used = estimateLocalStorageUsage();
+            const usedMb = (used / (1024 * 1024)).toFixed(2);
+            const payloadKb = (payload.length / 1024).toFixed(0);
             const err = new Error(
-              "Local storage is full. Remove some images, large content, or " +
-                "delete other projects before adding more.",
+              `Browser storage quota exceeded. Browsers cap localStorage at ` +
+                `~5–10 MB per site (this is unrelated to your disk free ` +
+                `space). Currently using ~${usedMb} MB; this save would add ` +
+                `~${payloadKb} KB. Open File → Storage… to inspect what's ` +
+                `stored and delete large items, or remove images from the ` +
+                `current document.`,
             ) as Error & { code: "QUOTA_EXCEEDED" };
             err.code = "QUOTA_EXCEEDED";
             throw err;
@@ -829,4 +836,181 @@ function syncAtoms(s: Store): void {
   $prefs.set({ ...s.prefs });
   $undoDepth.set(s.canUndo ? 1 : 0);
   $redoDepth.set(s.canRedo ? 1 : 0);
+}
+
+// ---------------------------------------------------------------------------
+// Storage inspection / cleanup API
+// ---------------------------------------------------------------------------
+// Each UTF-16 code unit in localStorage occupies 2 bytes; the JS string
+// length matches code unit count for our payloads (no astral chars in JSON).
+function byteSize(s: string): number {
+  return s.length * 2;
+}
+
+/** Estimate total bytes consumed across all localStorage keys (this origin). */
+export function estimateLocalStorageUsage(): number {
+  let total = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k == null) continue;
+    const v = localStorage.getItem(k);
+    if (v == null) continue;
+    total += byteSize(k) + byteSize(v);
+  }
+  return total;
+}
+
+export interface StorageAssetInfo {
+  /** Project id this asset belongs to. */
+  projectId: string;
+  /** Project's display name. */
+  projectName: string;
+  /** Asset id within the project. */
+  assetId: string;
+  /** Approximate bytes (UTF-16) used by this asset's data URL. */
+  bytes: number;
+  /** How many image elements still reference this asset. */
+  refCount: number;
+}
+
+export interface StorageProjectInfo {
+  id: string;
+  name: string;
+  /** Total bytes used by this project's serialized doc. */
+  bytes: number;
+  /** Whether this is the currently loaded project. */
+  isCurrent: boolean;
+  /** Number of assets in this project. */
+  assetCount: number;
+}
+
+export interface StorageReport {
+  totalBytes: number;
+  projects: StorageProjectInfo[];
+  assets: StorageAssetInfo[];
+  /** Bytes used by non-project keys (prefs, index, legacy). */
+  otherBytes: number;
+}
+
+/** Build a complete storage report by walking every project key. */
+export function buildStorageReport(): StorageReport {
+  const projects: StorageProjectInfo[] = [];
+  const assets: StorageAssetInfo[] = [];
+  let otherBytes = 0;
+  let totalBytes = 0;
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k == null) continue;
+    const v = localStorage.getItem(k);
+    if (v == null) continue;
+    const sz = byteSize(k) + byteSize(v);
+    totalBytes += sz;
+
+    if (!k.startsWith(PROJECT_PREFIX)) {
+      otherBytes += sz;
+      continue;
+    }
+
+    let doc: PrintDocument | null = null;
+    try {
+      doc = JSON.parse(v) as PrintDocument;
+    } catch {
+      otherBytes += sz;
+      continue;
+    }
+
+    const isCurrent = doc.id === store.doc.id;
+    const assetEntries = Object.entries(doc.assets ?? {});
+    projects.push({
+      id: doc.id,
+      name: doc.name || "(untitled)",
+      bytes: sz,
+      isCurrent,
+      assetCount: assetEntries.length,
+    });
+
+    // Tally references per asset across all pages and templates.
+    const refMap = new Map<string, number>();
+    const tally = (els: AnyElement[]): void => {
+      for (const e of els) {
+        if (e.type !== "image") continue;
+        const id = (e as ImageElement).assetId;
+        if (id) refMap.set(id, (refMap.get(id) ?? 0) + 1);
+      }
+    };
+    for (const p of doc.pages) tally(p.elements);
+    for (const t of doc.templates ?? []) tally(t.elements);
+
+    for (const [aid, dataUrl] of assetEntries) {
+      assets.push({
+        projectId: doc.id,
+        projectName: doc.name || "(untitled)",
+        assetId: aid,
+        bytes: byteSize(dataUrl),
+        refCount: refMap.get(aid) ?? 0,
+      });
+    }
+  }
+
+  return { totalBytes, projects, assets, otherBytes };
+}
+
+/** Delete a single asset from a project's localStorage entry. If the asset is
+ *  the currently loaded project's, the in-memory doc is also patched and the
+ *  store re-emits. Returns true on success. */
+export function deleteStorageAsset(
+  projectId: string,
+  assetId: string,
+): boolean {
+  if (projectId === store.doc.id) {
+    if (!store.doc.assets || !(assetId in store.doc.assets)) return false;
+    delete store.doc.assets[assetId];
+    // Clear references from elements that point at it.
+    const clearRefs = (els: AnyElement[]): void => {
+      for (const e of els) {
+        if (e.type === "image") {
+          const ie = e as ImageElement;
+          if (ie.assetId === assetId) {
+            ie.assetId = undefined;
+            ie.src = "";
+          }
+        }
+      }
+    };
+    for (const p of store.doc.pages) clearRefs(p.elements);
+    for (const t of store.doc.templates ?? []) clearRefs(t.elements);
+    try {
+      store.save();
+    } catch {
+      /* save handles its own quota errors */
+    }
+    store.emit();
+    return true;
+  }
+
+  try {
+    const raw = localStorage.getItem(projectKey(projectId));
+    if (!raw) return false;
+    const doc = JSON.parse(raw) as PrintDocument;
+    if (!doc.assets || !(assetId in doc.assets)) return false;
+    delete doc.assets[assetId];
+    const clearRefs = (els: AnyElement[]): void => {
+      for (const e of els) {
+        if (e.type === "image") {
+          const ie = e as ImageElement;
+          if (ie.assetId === assetId) {
+            ie.assetId = undefined;
+            ie.src = "";
+          }
+        }
+      }
+    };
+    for (const p of doc.pages) clearRefs(p.elements);
+    for (const t of doc.templates ?? []) clearRefs(t.elements);
+    localStorage.setItem(projectKey(projectId), JSON.stringify(doc));
+    return true;
+  } catch {
+    return false;
+  }
 }

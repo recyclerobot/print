@@ -3,6 +3,7 @@ import { A_SIZES } from "../types";
 import { DOCUMENT_PRESETS, findPreset } from "../presets";
 import { exportBundle, importBundle } from "../bundle";
 import { openExportModal } from "./exportModal";
+import { openStorageModal } from "./storageModal";
 import type { Renderer } from "../webgl/renderer";
 
 // Stroke-based 14×14 SVG icons sized for the topbar toggle cluster.
@@ -194,6 +195,16 @@ export function buildToolbar(
           } catch (e) {
             alert("Export failed: " + (e as Error).message);
           }
+        }),
+      );
+      panel.appendChild(divider());
+      panel.appendChild(
+        menuItem("Storage…", () => {
+          openStorageModal(() => {
+            renderer.invalidate();
+            requestRender();
+          });
+          close();
         }),
       );
       panel.appendChild(divider());
