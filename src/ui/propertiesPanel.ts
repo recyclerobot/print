@@ -227,22 +227,23 @@ function transformSection(
   );
 
   // --- W / H with aspect-ratio lock ----------------------------------------
+  // Render W, the chain-link toggle, and H as a single row that spans both
+  // columns of the grid so W and H sit visually side-by-side with the lock
+  // wedged between them (Figma / Photoshop pattern).
   const ratio = el.width / el.height;
   const arLocked = el.aspectRatioLocked ?? false;
-  grid.appendChild(
-    field(
-      "W",
-      unitInput(el.width, u, (mm) => {
-        const w = Math.max(1, mm);
-        const patch: Partial<AnyElement> = { width: w };
-        if (el.aspectRatioLocked) patch.height = Math.max(1, w / ratio);
-        store.updateElement(el.id, patch);
-        requestRender();
-      }),
-    ),
+
+  const wField = field(
+    "W",
+    unitInput(el.width, u, (mm) => {
+      const w = Math.max(1, mm);
+      const patch: Partial<AnyElement> = { width: w };
+      if (el.aspectRatioLocked) patch.height = Math.max(1, w / ratio);
+      store.updateElement(el.id, patch);
+      requestRender();
+    }),
   );
 
-  // Chain-link toggle button between W and H (Figma / Photoshop pattern).
   const lockBtn = document.createElement("button");
   lockBtn.type = "button";
   lockBtn.className = "ar-lock" + (arLocked ? " on" : "");
@@ -256,20 +257,24 @@ function transformSection(
     });
     requestRender();
   });
-  grid.appendChild(lockBtn);
 
-  grid.appendChild(
-    field(
-      "H",
-      unitInput(el.height, u, (mm) => {
-        const h = Math.max(1, mm);
-        const patch: Partial<AnyElement> = { height: h };
-        if (el.aspectRatioLocked) patch.width = Math.max(1, h * ratio);
-        store.updateElement(el.id, patch);
-        requestRender();
-      }),
-    ),
+  const hField = field(
+    "H",
+    unitInput(el.height, u, (mm) => {
+      const h = Math.max(1, mm);
+      const patch: Partial<AnyElement> = { height: h };
+      if (el.aspectRatioLocked) patch.width = Math.max(1, h * ratio);
+      store.updateElement(el.id, patch);
+      requestRender();
+    }),
   );
+
+  const whRow = document.createElement("div");
+  whRow.className = "wh-row";
+  whRow.appendChild(wField);
+  whRow.appendChild(lockBtn);
+  whRow.appendChild(hField);
+  grid.appendChild(whRow);
 
   grid.appendChild(
     field(
@@ -467,25 +472,6 @@ function imageSection(
   const measurements$ = imageMeasurementsAtom(el.id);
   const dpi$ = imageDpiAtom(el.id);
 
-  // "Total area" — only visible when the image is repeated. (Tile size is
-  // now an editable input below, so no readout is needed for it.)
-  const totalR = makeReadout("readout small");
-  const totalField = field("Total area", totalR);
-  totalField.style.display = "none";
-  grid.appendChild(totalField);
-
-  ctx.addSub(
-    bindBoth(measurements$, $unit, (m, u) => {
-      if (!m) return;
-      if (m.isRepeated) {
-        totalField.style.display = "";
-        totalR.textContent = `${formatUnit(m.totalWidth, u)} × ${formatUnit(m.totalHeight, u)}`;
-      } else {
-        totalField.style.display = "none";
-      }
-    }),
-  );
-
   if (el.naturalWidth && el.naturalHeight) {
     const r = document.createElement("div");
     r.className = "readout small";
@@ -520,6 +506,30 @@ function imageSection(
       }),
     );
   }
+
+  // "Total area" readout (full width below the grid) — only visible when
+  // the image is repeated. Placed here so it sits between the Image header
+  // and the Repeat section, never out of order.
+  const totalR = makeReadout("readout small total-area");
+  const totalField = field("Total area", totalR);
+  totalField.style.display = "none";
+
+  ctx.addSub(
+    bindBoth(measurements$, $unit, (m, u) => {
+      if (!m) return;
+      if (m.isRepeated) {
+        totalField.style.display = "";
+        totalR.textContent = `${formatUnit(m.totalWidth, u)} × ${formatUnit(m.totalHeight, u)}`;
+      } else {
+        totalField.style.display = "none";
+      }
+    }),
+  );
+
+  // Append the Image grid and the total-area readout BEFORE building the
+  // Repeat section so DOM order matches visual order.
+  host.appendChild(grid);
+  host.appendChild(totalField);
 
   // --- Repeat controls ---
   // The user thinks in terms of *tile size*, not repeat counts. Tile width /
@@ -571,7 +581,10 @@ function imageSection(
   );
   rGrid.appendChild(field("Tile height", tileHInput));
 
-  rGrid.appendChild(
+  // Gap on its own full-width row beneath the tile width/height pair.
+  const gapRow = document.createElement("div");
+  gapRow.className = "full-row";
+  gapRow.appendChild(
     field(
       "Gap",
       unitInput(el.repeatGap ?? 0, u2, (mm) => {
@@ -628,9 +641,8 @@ function imageSection(
     requestRender();
   });
   host.appendChild(rGrid);
+  host.appendChild(gapRow);
   host.appendChild(fillBtn);
-
-  host.appendChild(grid);
 }
 
 // Helper: subscribe to two atoms together and call cb with both values.
